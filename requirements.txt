@@ -1,0 +1,14 @@
+# ACE-Step 1.5 ComfyUI Nodes Requirements
+
+# Core dependencies
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+soundfile>=0.12.0
+numpy>=1.24.0
+
+# ACE-Step will be installed separately via uv
+# See README.md for ACE-Step installation instructions
+
+# Optional: for better audio handling
+librosa>=0.10.0
