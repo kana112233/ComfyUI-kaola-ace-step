@@ -149,7 +149,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 "bpm": ("INT", {"default": 0, "min": 0, "max": 300}),
                 "keyscale": ("STRING", {"default": ""}),
                 "timesignature": ("STRING", {"default": ""}),
-                "vocal_language": ("STRING", {"default": "unknown"}),
+                "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown"}),
                 "instrumental": ("BOOLEAN", {"default": False}),
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0}),
                 "shift": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 5.0}),
@@ -527,7 +527,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             },
             "optional": {
                 "instrumental": ("BOOLEAN", {"default": False}),
-                "vocal_language": ("STRING", {"default": ""}),
+                "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto"}),
                 "thinking": ("BOOLEAN", {"default": True}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
             },
@@ -549,7 +549,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         inference_steps: int,
         device: str,
         instrumental: bool = False,
-        vocal_language: str = "",
+        vocal_language: str = "auto",
         thinking: bool = True,
         audio_format: str = "flac",
     ) -> Tuple[Dict[str, Any], str, str, str]:
@@ -566,7 +566,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             llm_handler=llm_handler,
             query=query,
             instrumental=instrumental,
-            vocal_language=vocal_language if vocal_language else None,
+            vocal_language=None if vocal_language == "auto" else vocal_language,
             temperature=0.85,
         )
 

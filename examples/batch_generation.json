@@ -56,7 +56,7 @@
     },
     {
       "id": 3,
-      "type": "Preview Text",
+      "type": "Preview as (Show Text)",
       "pos": [500, 270],
       "size": {"0": 400, "1": 200},
       "flags": {},
@@ -65,7 +65,7 @@
       "inputs": [
         {"name": "text", "type": "STRING", "link": 3}
       ],
-      "properties": {"Node name for S&R": "Preview Text"}
+      "properties": {"Node name for S&R": "Preview as (Show Text)"}
     }
   ],
   "links": [
