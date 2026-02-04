@@ -44,12 +44,28 @@ class ACE_STEP_BASE:
         self.llm_handler = None
         self.handlers_initialized = False
 
+    @staticmethod
+    def auto_detect_device() -> str:
+        """
+        Auto-detect the best available device.
+        Priority: CUDA > MPS > XPU > CPU
+        """
+        import torch
+        if hasattr(torch, 'cuda') and torch.cuda.is_available():
+            return "cuda"
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            return "mps"
+        elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+            return "xpu"
+        else:
+            return "cpu"
+
     def initialize_handlers(
         self,
         checkpoint_dir: str,
         config_path: str,
         lm_model_path: str,
-        device: str = "cuda",
+        device: str = "auto",
         offload_to_cpu: bool = False,
     ):
         """Initialize ACE-Step handlers if not already initialized"""
@@ -58,6 +74,10 @@ class ACE_STEP_BASE:
 
         if not ACESTEP_AVAILABLE:
             raise RuntimeError("ACE-Step is not installed. Please install it first.")
+
+        # Auto-detect device if "auto" is specified
+        if device == "auto":
+            device = self.auto_detect_device()
 
         try:
             # Use ComfyUI's model directory if checkpoint_dir is not provided
@@ -122,7 +142,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 2**32 - 1}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["cuda", "cpu", "mps"], {"default": "cuda"}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
             },
             "optional": {
                 "lyrics": ("STRING", {"default": "", "multiline": True}),
@@ -256,7 +276,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 "batch_size": ("INT", {"default": 1, "min": 1, "max": 8}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 2**32 - 1}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["cuda", "cpu", "mps"], {"default": "cuda"}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
             },
             "optional": {
                 "lyrics": ("STRING", {"default": "", "multiline": True}),
@@ -381,7 +401,7 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 2**32 - 1}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["cuda", "cpu", "mps"], {"default": "cuda"}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
             },
             "optional": {
                 "thinking": ("BOOLEAN", {"default": True}),
@@ -503,7 +523,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 2**32 - 1}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["cuda", "cpu", "mps"], {"default": "cuda"}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
             },
             "optional": {
                 "instrumental": ("BOOLEAN", {"default": False}),
@@ -639,7 +659,7 @@ class ACE_STEP_FORMAT_SAMPLE(ACE_STEP_BASE):
                 "lyrics": ("STRING", {"default": "", "multiline": True}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
                 "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
-                "device": (["cuda", "cpu", "mps"], {"default": "cuda"}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
             },
             "optional": {
                 "user_metadata": ("STRING", {"default": "{}"}),
@@ -713,7 +733,7 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
                 "audio_codes": ("STRING", {"default": "", "multiline": True}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
                 "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
-                "device": (["cuda", "cpu", "mps"], {"default": "cuda"}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
             },
         }
 
