@@ -110,6 +110,69 @@ if ACESTEP_AVAILABLE:
     AceStepHandler.process_src_audio = patched_process_src_audio
     print("Monkeypatched AceStepHandler.process_src_audio to use soundfile")
 
+    # --------------------------------------------------------------------------------
+    # MonkeyPatch convert_src_audio_to_codes to fix multi-codebook flattening issue
+    # The DiT tokenizer might return multiple codebooks (e.g. 8), but 5Hz LM expects
+    # only the first semantic codebook. Flattening all of them causes garbage input.
+    # --------------------------------------------------------------------------------
+    def patched_convert_src_audio_to_codes(self, audio_file) -> str:
+        if audio_file is None:
+            return "❌ Please upload source audio first"
+        
+        if self.model is None or self.vae is None:
+            return "❌ Model not initialized. Please initialize the service first."
+        
+        try:
+            # Process audio file (uses patched_process_src_audio internally if patched)
+            processed_audio = self.process_src_audio(audio_file)
+            if processed_audio is None:
+                return "❌ Failed to process audio file"
+            
+            # Encode audio to latents using VAE
+            with torch.no_grad():
+                with self._load_model_context("vae"):
+                    # Check if audio is silence
+                    if self.is_silence(processed_audio.unsqueeze(0)):
+                        return "❌ Audio file appears to be silent"
+                    
+                    # Encode to latents using helper method
+                    latents = self._encode_audio_to_latents(processed_audio)  # [T, d]
+                
+                # Create attention mask for latents
+                attention_mask = torch.ones(latents.shape[0], dtype=torch.bool, device=self.device)
+                
+                # Tokenize latents to get code indices
+                with self._load_model_context("model"):
+                    # Prepare latents for tokenize: [T, d] -> [1, T, d]
+                    hidden_states = latents.unsqueeze(0)  # [1, T, d]
+                    
+                    # Call tokenize method
+                    # tokenize returns: (quantized, indices, attention_mask)
+                    # Note: indices shape is typically [1, T, num_quantizers]
+                    _, indices, _ = self.model.tokenize(hidden_states, self.silence_latent, attention_mask.unsqueeze(0))
+                    
+                    # FIX: If multiple codebooks, take only the first one (semantic codes)
+                    if indices.dim() == 3 and indices.shape[-1] > 1:
+                        # print(f"[patched_convert] Detected multiple codebooks: {indices.shape}. Selecting first one.")
+                        indices = indices[..., 0]
+                    
+                    # Format indices as code string
+                    # indices shape now: [1, T_5Hz]
+                    indices_flat = indices.flatten().cpu().tolist()
+                    codes_string = "".join([f"<|audio_code_{idx}|>" for idx in indices_flat])
+                    
+                    # print(f"[patched_convert] Generated {len(indices_flat)} audio codes")
+                    return codes_string
+                    
+        except Exception as e:
+            error_msg = f"❌ Error converting audio to codes: {str(e)}"
+            # import traceback
+            # traceback.print_exc()
+            return error_msg
+
+    AceStepHandler.convert_src_audio_to_codes = patched_convert_src_audio_to_codes
+    print("Monkeypatched AceStepHandler.convert_src_audio_to_codes to select first codebook")
+
 
 # Register ACE-Step model directory with ComfyUI
 # Models should be placed in: ComfyUI/models/Ace-Step1.5/
