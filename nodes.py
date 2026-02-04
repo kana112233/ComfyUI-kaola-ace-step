@@ -356,7 +356,8 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
         # Save input audio to temp file
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             temp_path = tmp.name
-            waveform = src_audio["waveform"].squeeze(0).numpy()
+            # ComfyUI waveform format: (batch, channels, samples) -> (samples, channels) for soundfile
+            waveform = src_audio["waveform"].squeeze(0).numpy().T
             import soundfile as sf
             sf.write(temp_path, waveform, src_audio["sample_rate"])
 
@@ -482,7 +483,8 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
         # Save input audio to temp file
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             temp_path = tmp.name
-            waveform = src_audio["waveform"].squeeze(0).numpy()
+            # ComfyUI waveform format: (batch, channels, samples) -> (samples, channels) for soundfile
+            waveform = src_audio["waveform"].squeeze(0).numpy().T
             import soundfile as sf
             sf.write(temp_path, waveform, src_audio["sample_rate"])
 
