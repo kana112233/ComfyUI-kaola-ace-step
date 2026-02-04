@@ -151,22 +151,16 @@ if ACESTEP_AVAILABLE:
                     # Note: indices shape is typically [1, T, num_quantizers]
                     _, indices, _ = self.model.tokenize(hidden_states, self.silence_latent, attention_mask.unsqueeze(0))
                     
-                    print(f"[debug_nodes] Tokenize output indices shape: {indices.shape}")
-                    print(f"[debug_nodes] Indices min/max: {indices.min().item()}/{indices.max().item()}")
-
                     # FIX: If multiple codebooks, take only the first one (semantic codes)
                     if indices.dim() == 3 and indices.shape[-1] > 1:
-                        print(f"[debug_nodes] Detected multiple codebooks: {indices.shape}. Selecting first one.")
+                        # print(f"[debug_nodes] Detected multiple codebooks: {indices.shape}. Selecting first one.")
                         indices = indices[..., 0]
-                    
-                    print(f"[debug_nodes] Selected indices shape: {indices.shape}")
                     
                     # Format indices as code string
                     # indices shape now: [1, T_5Hz]
                     indices_flat = indices.flatten().cpu().tolist()
                     codes_string = "".join([f"<|audio_code_{idx}|>" for idx in indices_flat])
                     
-                    print(f"[debug_nodes] Generated {len(indices_flat)} audio codes. String len: {len(codes_string)}")
                     return codes_string
                     
         except Exception as e:
@@ -931,86 +925,116 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
                 "audio": ("AUDIO",),
                 "checkpoint_dir": ("STRING", {"default": ""}),
                 "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
+                "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
+                "target_duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+            },
+            "optional": {
+                "language": (["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt", "nl", "tr", "pl", "ar", "vi", "th"], {"default": "auto"}),
+                "temperature": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0}),
+                "thinking": ("BOOLEAN", {"default": True}),
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING", "INT", "FLOAT", "STRING", "STRING")
-    RETURN_NAMES = ("caption", "lyrics", "bpm", "duration", "keyscale", "language")
+    RETURN_TYPES = ("STRING", "STRING", "FLOAT", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("analysis_text", "caption", "duration", "bpm", "keyscale", "lyrics")
     FUNCTION = "understand"
     CATEGORY = "Audio/ACE-Step"
+    OUTPUT_NODE = True
 
     def understand(
         self,
-        audio: Dict[str, torch.Tensor],
+        audio: Dict[str, Any],
         checkpoint_dir: str,
         lm_model_path: str,
+        config_path: str,
+        target_duration: float,
         device: str,
-    ) -> Tuple[str, str, int, float, str, str]:
-        # Initialize handlers
-        dit_handler, llm_handler = self.initialize_handlers(
-            checkpoint_dir=checkpoint_dir,
-            config_path="acestep-v15-turbo",  # Dummy config path, needed to init handler
-            lm_model_path=lm_model_path,
-            device=device,
-        )
+        language: str = "auto",
+        temperature: float = 0.3,
+        thinking: bool = True,
+    ) -> Tuple[str, str, float, str, str, str]:
+        import tempfile
+        import acestep.llm_inference
 
-        # 1. Save input audio tensor to temp file so handler can process it
-        # Audio tensor is [1, channels, samples] or [channels, samples]
-        audio_tensor = audio.get("waveform")
-        sample_rate = audio.get("sample_rate", 44100)
-        
-        if audio_tensor is None:
-             raise ValueError("Input audio does not contain waveform")
+        # Clear CUDA cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-        # Normalize to [channels, samples]
-        if audio_tensor.dim() == 3:
-            # [batch, channels, samples] -> take first batch
-            audio_tensor = audio_tensor[0]
-            
-        # soundfile expects [samples, channels]
-        audio_np = audio_tensor.cpu().numpy().T
-        
-        temp_audio_path = ""
+        # Save input audio to temp file
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            temp_path = tmp.name
+            waveform = audio["waveform"].squeeze(0).numpy().T
+            import soundfile as sf
+            sf.write(temp_path, waveform, audio["sample_rate"])
+
         try:
-             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                 temp_audio_path = f.name
-                 
-             sf.write(temp_audio_path, audio_np, sample_rate)
-             
-             # 2. Convert Audio -> Codes using VAE+DiT Tokenizer
-             # Note: convert_src_audio_to_codes is in AceStepHandler (dit_handler)
-             input_codes = dit_handler.convert_src_audio_to_codes(temp_audio_path)
-             
-             if not input_codes or input_codes.startswith("❌"):
-                 raise RuntimeError(f"Failed to encode audio: {input_codes}")
-                 
+            # Initialize handlers
+            dit_handler, llm_handler = self.initialize_handlers(
+                checkpoint_dir=checkpoint_dir,
+                config_path=config_path,
+                lm_model_path=lm_model_path,
+                device=device,
+            )
+
+            # Convert audio to codes
+            print(f"[understand] Converting audio to codes for {target_duration}s...")
+            input_codes = dit_handler.convert_src_audio_to_codes(temp_path)
+            
+            # Handle potential error message from conversion
+            if isinstance(input_codes, str) and input_codes.startswith("❌"):
+                raise RuntimeError(input_codes)
+            
+            # Dynamic Monkeypatch: Inject language hint if specified
+            original_instruction = acestep.llm_inference.DEFAULT_LM_UNDERSTAND_INSTRUCTION
+            if language != "auto":
+                lang_instruction = f" The vocal language is {language}."
+                # Append if not already present (to avoid double appending on re-runs if global state persists differently)
+                if lang_instruction not in acestep.llm_inference.DEFAULT_LM_UNDERSTAND_INSTRUCTION:
+                     acestep.llm_inference.DEFAULT_LM_UNDERSTAND_INSTRUCTION += lang_instruction
+                     print(f"[understand] Injected language hint: {lang_instruction}")
+
+            try:
+                # Call understand_music
+                result = understand_music(
+                    llm_handler=llm_handler,
+                    audio_codes=input_codes,
+                    temperature=temperature,
+                )
+            finally:
+                # Restore original instruction strictly
+                if language != "auto":
+                     acestep.llm_inference.DEFAULT_LM_UNDERSTAND_INSTRUCTION = original_instruction
+
+            if not result.success:
+                raise RuntimeError(f"Understanding failed: {result.error}")
+            
+            # Format output text analysis
+            analysis = (
+                f"🎵 Analysis Result:\n"
+                f"----------------\n"
+                f"📝 Caption: {result.caption}\n"
+                f"⏱️ BPM: {result.bpm or 'N/A'}\n"
+                f"⏳ Duration: {result.duration or 'N/A'}s\n"
+                f"🎼 Key: {result.keyscale or 'N/A'}\n"
+                f"🗣️ Language: {result.language or 'N/A'}\n"
+                f"🎼 Time Signature: {result.timesignature or 'N/A'}\n\n"
+                f"📜 Lyrics:\n{result.lyrics}"
+            )
+
+            return (
+                analysis,
+                result.caption,
+                float(result.duration or 0.0),
+                str(result.bpm or ""),
+                result.keyscale,
+                result.lyrics,
+            )
+
         finally:
-             # Cleanup temp file
-             if temp_audio_path and os.path.exists(temp_audio_path):
-                 try:
-                     os.remove(temp_audio_path)
-                 except:
-                     pass
-
-        # 3. Understand music from codes
-        result = understand_music(
-            llm_handler=llm_handler,
-            audio_codes=input_codes,
-            temperature=0.85,
-        )
-
-        if not result.success:
-            raise RuntimeError(f"Understanding failed: {result.error}")
-
-        return (
-            result.caption,
-            result.lyrics,
-            result.bpm or 0,
-            result.duration or 0.0,
-            result.keyscale,
-            result.language,
-        )
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
 
 
