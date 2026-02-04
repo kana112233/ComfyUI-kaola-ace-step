@@ -56,6 +56,20 @@ class ACE_STEP_BASE:
         try:
             # Initialize DiT handler
             self.dit_handler = AceStepHandler()
+
+            # Monkey patch _get_project_root to use user's model directory
+            # This works around ACE-Step's hardcoded path detection
+            original_get_project_root = self.dit_handler._get_project_root
+            def _patched_get_project_root():
+                # If checkpoint_dir contains models directly, use it
+                # Otherwise, use checkpoint_dir/checkpoints
+                if os.path.isdir(os.path.join(checkpoint_dir, config_path)):
+                    return checkpoint_dir
+                else:
+                    return os.path.dirname(checkpoint_dir) if checkpoint_dir.endswith("checkpoints") else checkpoint_dir
+
+            self.dit_handler._get_project_root = _patched_get_project_root
+
             self.dit_handler.initialize_service(
                 project_root=checkpoint_dir,
                 config_path=config_path,
