@@ -179,6 +179,21 @@ ACESTEP_MODEL_NAME = "Ace-Step1.5"
 if ACESTEP_AVAILABLE:
     folder_paths.add_model_folder_path(ACESTEP_MODEL_NAME, os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME))
 
+def get_acestep_models():
+    if not ACESTEP_AVAILABLE:
+        return []
+    model_dir = os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)
+    if not os.path.exists(model_dir):
+        return []
+    # List subdirectories
+    models = [name for name in os.listdir(model_dir) if os.path.isdir(os.path.join(model_dir, name))]
+    # Ensure defaults are present if not found (for UI stability)
+    defaults = ["acestep-5Hz-lm-1.7B", "acestep-v15-turbo"]
+    for d in defaults:
+        if d not in models:
+            models.append(d)
+    return sorted(list(set(models)))
+
 
 class ACE_STEP_BASE:
     """Base class for ACE-Step nodes with handler management"""
@@ -303,8 +318,8 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             "required": {
                 "caption": ("STRING", {"default": "", "multiline": True}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
                 "duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0}),
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
@@ -444,8 +459,8 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 "src_audio": ("AUDIO",),
                 "caption": ("STRING", {"default": "", "multiline": True}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
                 "audio_cover_strength": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0}),
                 "batch_size": ("INT", {"default": 1, "min": 1, "max": 8}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
@@ -579,8 +594,8 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 "repainting_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 600.0}),
                 "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
@@ -708,8 +723,8 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             "required": {
                 "query": ("STRING", {"default": "", "multiline": True}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
-                "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
@@ -855,7 +870,7 @@ class ACE_STEP_FORMAT_SAMPLE(ACE_STEP_BASE):
                 "caption": ("STRING", {"default": "", "multiline": True}),
                 "lyrics": ("STRING", {"default": "", "multiline": True}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
             },
             "optional": {
@@ -929,8 +944,8 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
             "required": {
                 "audio": ("AUDIO",),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
-                "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
                 "target_duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
             },
