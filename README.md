@@ -20,23 +20,31 @@ ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5
 
 ### Prerequisites / 前置要求
 
-1. **Install ACE-Step** / 安装 ACE-Step:
+1. **Python 3.11** (必需) / Python 3.11 is required:
 ```bash
-# Install uv package manager
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Clone and install ACE-Step
-git clone https://github.com/ace-step/ACE-Step-1.5.git acestep_repo
-cd acestep_repo
-uv sync
-
-# Download models (requires ~8GB disk space)
-uv run acestep-download
+# 创建 conda 环境
+conda create -n ace-step python=3.11 -y
+conda activate ace-step
 ```
 
-2. **Install Python Dependencies** / 安装 Python 依赖:
+2. **Install ACE-Step Python Package** / 安装 ACE-Step Python 包:
 ```bash
-pip install torch torchvision torchaudio soundfile
+# 从 GitHub 安装 acestep 包
+pip install git+https://github.com/ace-step/ACE-Step-1.5.git
+```
+
+3. **Install PyTorch Dependencies** / 安装 PyTorch 依赖:
+```bash
+pip install torch torchvision torchaudio soundfile numpy
+```
+
+4. **Download Models** / 下载模型 (可选 / Optional):
+```bash
+# 方式 1: 使用 huggingface-cli (推荐)
+huggingface-cli download ACE-Step/Ace-Step1.5 --local-dir /path/to/models
+
+# 方式 2: 浏览器下载
+# https://huggingface.co/ACE-Step/Ace-Step1.5
 ```
 
 ### Installation / 安装
@@ -61,23 +69,46 @@ git clone https://github.com/kana112233/ComfyUI-kaola-ace_step.git
 
 ### Configuration / 配置
 
-**Model Directory / 模型目录**
+**Option 1: Use Existing Models / 使用已有模型**
 
-Models should be placed in ComfyUI's models directory:
+如果你已经下载了 ACE-Step 模型，直接放置到 ComfyUI 模型目录：
 
-将模型放在 ComfyUI 的 models 目录下：
+```bash
+# 假设你的模型在 /path/to/Ace-Step1.5/
+# 创建符号链接或复制文件
+ln -s /path/to/Ace-Step1.5/* ComfyUI/models/acestep/
+```
+
+**Option 2: Download Models / 下载模型**
+
+使用 huggingface-cli 下载模型到 ComfyUI 目录：
+
+```bash
+# 创建模型目录
+mkdir -p ComfyUI/models/acestep
+
+# 下载模型
+huggingface-cli download ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/acestep
+```
+
+**Expected Structure / 期望目录结构:**
 
 ```
 ComfyUI/models/acestep/
-├── acestep-v15-turbo/
-├── acestep-5Hz-lm-1.7B/
-├── vae/
-└── Qwen3-Embedding-0.6B/
+├── acestep-v15-turbo/          # DiT 模型
+│   ├── config.json
+│   ├── model.safetensors
+│   └── ...
+├── acestep-5Hz-lm-1.7B/        # LM 模型
+├── vae/                         # VAE 模型
+└── Qwen3-Embedding-0.6B/        # 文本编码器
 ```
 
-For detailed setup instructions, see [MODEL_SETUP.md](MODEL_SETUP.md)
+**Node Settings / 节点设置:**
 
-详细设置说明请参考 [MODEL_SETUP.md](MODEL_SETUP.md)
+- **checkpoint_dir**: 留空 (自动使用 `ComfyUI/models/acestep/`)
+- **config_path**: `acestep-v15-turbo` (快速) 或 `acestep-v15-base` (高质量)
+- **lm_model_path**: `acestep-5Hz-lm-1.7B` (推荐)(MODEL_SETUP.md)
 
 **Node Parameters / 节点参数**
 
