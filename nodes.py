@@ -3,39 +3,11 @@ ACE-Step 1.5 Music Generation Nodes
 """
 
 import os
-import ctypes
 import sys
-import glob
-
-# --------------------------------------------------------------------------------
-# Critical TLS Fix for ComfyUI + Conda
-# The "Inconsistency detected by ld.so" error is caused by OpenMP library conflicts.
-# We attempt to force-load libgomp via ctypes before any other library loads it.
-# --------------------------------------------------------------------------------
-def _force_load_libgomp():
-    try:
-        # 1. Try generic path
-        ctypes.CDLL("libgomp.so.1", mode=ctypes.RTLD_GLOBAL)
-    except OSError:
-        # 2. Try to find it in the current conda environment (based on sys.executable)
-        try:
-            conda_prefix = os.environ.get("CONDA_PREFIX")
-            if not conda_prefix and "envs" in sys.executable:
-                 # Infer from python path if CONDA_PREFIX is missing
-                 conda_prefix = sys.executable.split("/bin/python")[0]
-            
-            if conda_prefix:
-                lib_paths = glob.glob(os.path.join(conda_prefix, "lib", "libgomp.so.1"))
-                if lib_paths:
-                    ctypes.CDLL(lib_paths[0], mode=ctypes.RTLD_GLOBAL)
-        except Exception:
-            pass
-
-_force_load_libgomp()
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-# --------------------------------------------------------------------------------
-
 import torch
+
+# Force load libgomp/libiomp5 by importing torch first
+# os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import json
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
@@ -101,10 +73,17 @@ class ACE_STEP_BASE:
     ):
         """Initialize ACE-Step handlers if not already initialized"""
         if self.handlers_initialized:
+            # Clear CUDA cache before reusing handlers to prevent OOM
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             return self.dit_handler, self.llm_handler
 
         if not ACESTEP_AVAILABLE:
             raise RuntimeError("ACE-Step is not installed. Please install it first.")
+
+        # Clear CUDA cache before initialization
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         # Auto-detect device if "auto" is specified
         if device == "auto":
@@ -230,6 +209,10 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         lm_temperature: float = 0.85,
         audio_format: str = "flac",
     ) -> Tuple[Dict[str, Any], str, str]:
+        # Clear CUDA cache before generation to prevent OOM
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         # Initialize handlers
         dit_handler, llm_handler = self.initialize_handlers(
             checkpoint_dir=checkpoint_dir,
@@ -352,6 +335,10 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
         audio_format: str = "flac",
     ) -> Tuple[Dict[str, Any], str, str]:
         import tempfile
+
+        # Clear CUDA cache before generation to prevent OOM
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         # Save input audio to temp file
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -480,6 +467,10 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
     ) -> Tuple[Dict[str, Any], str, str]:
         import tempfile
 
+        # Clear CUDA cache before generation to prevent OOM
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         # Save input audio to temp file
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             temp_path = tmp.name
@@ -606,6 +597,10 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         thinking: bool = True,
         audio_format: str = "flac",
     ) -> Tuple[Dict[str, Any], str, str, str]:
+        # Clear CUDA cache before generation to prevent OOM
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         # Initialize handlers
         dit_handler, llm_handler = self.initialize_handlers(
             checkpoint_dir=checkpoint_dir,
