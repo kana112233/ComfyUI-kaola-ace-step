@@ -119,13 +119,15 @@ class ACE_STEP_BASE:
                 offload_to_cpu=offload_to_cpu,
             )
 
-            # Initialize LLM handler
+            # Initialize LLM handler (pass dtype from DiT handler)
             self.llm_handler = LLMHandler()
             self.llm_handler.initialize(
                 checkpoint_dir=checkpoint_dir,
                 lm_model_path=lm_model_path,
                 backend="vllm",
                 device=device,
+                offload_to_cpu=offload_to_cpu,
+                dtype=self.dit_handler.dtype,  # Critical: pass dtype from DiT handler
             )
 
             self.handlers_initialized = True
