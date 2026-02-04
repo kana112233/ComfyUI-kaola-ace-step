@@ -3,55 +3,39 @@ ACE-Step 1.5 Music Generation Nodes
 """
 
 import os
-import sys
 import ctypes
+import sys
+import glob
 
 # --------------------------------------------------------------------------------
-# CRITICAL: Fix OpenMP library conflicts between PyTorch and ComfyUI
-# This MUST execute before any other imports to prevent ld.so crash
+# Critical TLS Fix for ComfyUI + Conda
+# The "Inconsistency detected by ld.so" error is caused by OpenMP library conflicts.
+# We attempt to force-load libgomp via ctypes before any other library loads it.
 # --------------------------------------------------------------------------------
-def _preload_libgomp():
-    """
-    Preload libgomp with RTLD_GLOBAL | RTLD_NOW to ensure all libraries
-    use the same OpenMP runtime. Must be called before importing torch.
-    """
-    libgomp_loaded = False
-
-    # Method 1: Try conda environment
-    conda_prefix = os.environ.get("CONDA_PREFIX", "")
-    if conda_prefix:
-        lib_paths = [
-            os.path.join(conda_prefix, "lib", "libgomp.so.1"),
-            os.path.join(conda_prefix, "lib", "libgomp.so"),
-        ]
-        for path in lib_paths:
-            if os.path.exists(path):
-                try:
-                    ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL | ctypes.RTLD_NOW)
-                    print(f"[ACE-Step] Preloaded {path}")
-                    libgomp_loaded = True
-                    break
-                except Exception as e:
-                    print(f"[ACE-Step] Failed to load {path}: {e}")
-
-    # Method 2: Try system library paths
-    if not libgomp_loaded:
+def _force_load_libgomp():
+    try:
+        # 1. Try generic path
+        ctypes.CDLL("libgomp.so.1", mode=ctypes.RTLD_GLOBAL)
+    except OSError:
+        # 2. Try to find it in the current conda environment (based on sys.executable)
         try:
-            ctypes.CDLL("libgomp.so.1", mode=ctypes.RTLD_GLOBAL | ctypes.RTLD_NOW)
-            print("[ACE-Step] Preloaded system libgomp.so.1")
-            libgomp_loaded = True
+            conda_prefix = os.environ.get("CONDA_PREFIX")
+            if not conda_prefix and "envs" in sys.executable:
+                 # Infer from python path if CONDA_PREFIX is missing
+                 conda_prefix = sys.executable.split("/bin/python")[0]
+            
+            if conda_prefix:
+                lib_paths = glob.glob(os.path.join(conda_prefix, "lib", "libgomp.so.1"))
+                if lib_paths:
+                    ctypes.CDLL(lib_paths[0], mode=ctypes.RTLD_GLOBAL)
         except Exception:
             pass
 
-    if not libgomp_loaded:
-        print("[ACE-Step] Warning: Could not preload libgomp, may experience OpenMP conflicts")
-
-    return libgomp_loaded
-
-# Execute immediately before any other imports
-_preload_libgomp()
+_force_load_libgomp()
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 # --------------------------------------------------------------------------------
 
+import sys
 import torch
 import json
 import numpy as np
