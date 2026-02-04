@@ -36,14 +36,14 @@
       "properties": {"Node name for S&R": "ACE_STEP_Cover"},
       "widgets_values": [
         "jazz piano arrangement with swing feel",
-        "./acestep_repo/checkpoints",
+        "",
         "acestep-v15-turbo",
         "acestep-5Hz-lm-1.7B",
         0.7,
         1,
         42,
         8,
-        "cuda",
+        "auto",
         "",
         true,
         "flac"
