@@ -14,7 +14,7 @@ Repository = "https://github.com/kana112233/ComfyUI-kaola-ace_step"
 Documentation = "https://github.com/kana112233/ComfyUI-kaola-ace_step#readme"
 
 [tool.comfy]
-PublisherId = "kana112233"
+PublisherId = "kaola"
 DisplayName = "Kaola ACE-Step Music"
 Icon = ""
 
