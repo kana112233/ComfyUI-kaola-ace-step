@@ -7,8 +7,10 @@ torchaudio>=2.0.0
 soundfile>=0.12.0
 numpy>=1.24.0
 
-# ACE-Step will be installed separately via uv
-# See README.md for ACE-Step installation instructions
+# ACE-Step from GitHub (requires cloning due to local dependencies)
+# Install with: pip install git+https://github.com/ace-step/ACE-Step-1.5.git
+# Note: This package has local dependencies (nano-vllm) that may require manual setup
+# For full installation, follow the instructions in README.md
 
 # Optional: for better audio handling
 librosa>=0.10.0
