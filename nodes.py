@@ -89,11 +89,11 @@ class ACE_STEP_BASE:
             # ComfyUI uses: {models_dir}/acestep/{model_name}
             checkpoints_dir = os.path.join(checkpoint_dir, "checkpoints")
             if not os.path.exists(checkpoints_dir):
-                # Create a symlink: checkpoints -> .
+                # Create a symlink: checkpoints -> checkpoint_dir (current directory)
                 # This makes both paths work:
                 # - {models_dir}/acestep/{model_name}
                 # - {models_dir}/acestep/checkpoints/{model_name}
-                os.symlink(".", checkpoints_dir, target_is_directory=True)
+                os.symlink(checkpoint_dir, checkpoints_dir, target_is_directory=True)
 
             # Initialize DiT handler
             self.dit_handler = AceStepHandler()
