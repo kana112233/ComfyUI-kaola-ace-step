@@ -151,17 +151,22 @@ if ACESTEP_AVAILABLE:
                     # Note: indices shape is typically [1, T, num_quantizers]
                     _, indices, _ = self.model.tokenize(hidden_states, self.silence_latent, attention_mask.unsqueeze(0))
                     
+                    print(f"[debug_nodes] Tokenize output indices shape: {indices.shape}")
+                    print(f"[debug_nodes] Indices min/max: {indices.min().item()}/{indices.max().item()}")
+
                     # FIX: If multiple codebooks, take only the first one (semantic codes)
                     if indices.dim() == 3 and indices.shape[-1] > 1:
-                        # print(f"[patched_convert] Detected multiple codebooks: {indices.shape}. Selecting first one.")
+                        print(f"[debug_nodes] Detected multiple codebooks: {indices.shape}. Selecting first one.")
                         indices = indices[..., 0]
+                    
+                    print(f"[debug_nodes] Selected indices shape: {indices.shape}")
                     
                     # Format indices as code string
                     # indices shape now: [1, T_5Hz]
                     indices_flat = indices.flatten().cpu().tolist()
                     codes_string = "".join([f"<|audio_code_{idx}|>" for idx in indices_flat])
                     
-                    # print(f"[patched_convert] Generated {len(indices_flat)} audio codes")
+                    print(f"[debug_nodes] Generated {len(indices_flat)} audio codes. String len: {len(codes_string)}")
                     return codes_string
                     
         except Exception as e:
