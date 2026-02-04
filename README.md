@@ -16,17 +16,18 @@ ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5
 ### 1. Install ACE-Step
 
 ```bash
-pip install git+https://github.com/ace-step/ACE-Step-1.5.git
+git clone https://github.com/ACE-Step/ACE-Step-1.5.git
+cd ACE-Step-1.5
+uv sync
 ```
-
-> **Note**: Requires Python 3.11. Use `conda create -n ace-step python=3.11` if needed.
 
 ### 2. Install ComfyUI Nodes
 
 ```bash
 cd ComfyUI/custom_nodes
 git clone https://github.com/kana112233/ComfyUI-kaola-ace-step.git
-pip install -r ComfyUI/custom_nodes/ComfyUI-kaola-ace-step/requirements.txt
+cd ComfyUI-kaola-ace-step
+pip install -r requirements.txt
 ```
 
 ### 3. Download Models
@@ -90,4 +91,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - [ACE-Step GitHub](https://github.com/ace-step/ACE-Step-1.5)
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
-- [ComfyUI Registry](https://registry.comfy.org)
