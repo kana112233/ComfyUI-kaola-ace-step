@@ -37,7 +37,7 @@ huggingface-cli download ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/acestep
 
 # Or using hfd (faster)
 pip install hfd
-hfd download ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/acestep
+hfd ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/acestep
 ```
 
 ### 4. Restart ComfyUI
