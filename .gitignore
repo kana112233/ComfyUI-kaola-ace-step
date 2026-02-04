@@ -16,45 +16,39 @@ parts/
 sdist/
 var/
 wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
-# ACE-Step repository
-acestep_repo/
-ACE-Step-1.5/
-
-# Virtual environments
+# Virtual Environment
 venv/
+.venv/
 env/
+.env/
 ENV/
-.venv
+pip-log.txt
+pip-delete-this-directory.txt
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# ComfyUI specific
+models/
+checkpoints/
+output/
+input/
+temp/
+*.log
 
 # OS
 .DS_Store
 Thumbs.db
 
-# ComfyUI outputs
-output/
-temp/
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Logs
-*.log
-
-# Models/checkpoints (large files)
-checkpoints/
-*.ckpt
-*.safetensors
-*.pth
-
-# Temporary files
-*.tmp
-*.bak
-.cache/
+# ACE-Step repository (large, should be downloaded separately)
+acestep_repo/
+ACE-Step-1.5/

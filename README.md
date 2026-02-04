@@ -1,187 +1,167 @@
-# ACE-Step 1.5 ComfyUI Nodes
+# ComfyUI-Kaola-ACE-Step
 
-ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5), a powerful open-source music generation model.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![ComfyUI Registry](https://img.shields.io/badge/dynamic/json?color=blue&label=registry&prefix=v&query=version&url=https%3A%2F%2Fregistry.comfy.org%2Fnodes%2Fcomfyui-kaola-ace-step)](https://registry.comfy.org/packages/nodes/comfyui-kaola-ace-step/)
 
-## Features
+ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5) - A powerful open-source music generation model that achieves commercial-grade quality.
 
-- **Text to Music**: Generate music from text descriptions
-- **Cover**: Transform existing audio while maintaining structure
-- **Repaint**: Regenerate specific segments of audio
-- **Simple Mode**: Generate music from natural language with automatic metadata
-- **Format Sample**: Enhance and format user input
-- **Understand**: Analyze audio semantic codes
+基于 [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5) 的 ComfyUI 自定义节点 - 商业级的开源音乐生成模型。
 
-## Installation
+## Features / 功能特性
 
-### Prerequisites
+- 🎵 **Text to Music** - Generate music from text descriptions / 从文本描述生成音乐
+- 🎭 **Cover Generation** - Transform audio to different styles / 风格转换和翻唱
+- 🎨 **Audio Repaint** - Regenerate specific segments / 局部重绘音频
+- 💡 **Simple Mode** - Natural language to music with auto-metadata / 自然语言生成
+- 📝 **Format Sample** - Enhance and format user input / 格式化输入
+- 🔍 **Understand Audio** - Analyze audio codes / 音频分析
 
-1. Install ACE-Step:
+## Quick Start / 快速开始
+
+### Prerequisites / 前置要求
+
+1. **Install ACE-Step** / 安装 ACE-Step:
 ```bash
 # Install uv package manager
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Clone and install ACE-Step
-git clone https://github.com/ace-step/ACE-Step-1.5.git
-cd ACE-Step-1.5
+git clone https://github.com/ace-step/ACE-Step-1.5.git acestep_repo
+cd acestep_repo
 uv sync
-```
 
-2. Download models:
-```bash
+# Download models (requires ~8GB disk space)
 uv run acestep-download
 ```
 
-### Install ComfyUI Nodes
-
-1. Clone this repository or copy the `ace_step` folder to your ComfyUI `custom_nodes` directory:
-```bash
-cd ComfyUI/custom_nodes
-git clone https://github.com/yourusername/comfyui-ace-step-nodes.git ace_step
-```
-
-2. Install Python dependencies:
+2. **Install Python Dependencies** / 安装 Python 依赖:
 ```bash
 pip install torch torchvision torchaudio soundfile
 ```
 
-3. Link or copy ACE-Step to the node directory:
+### Installation / 安装
+
+#### Method 1: ComfyUI Manager (Recommended) / 方式 1: ComfyUI Manager（推荐）
+
+Coming soon to ComfyUI Registry!
+
+即将在 ComfyUI Registry 上线！
+
+#### Method 2: Manual Install / 方式 2: 手动安装
+
 ```bash
-cd ace_step
-ln -s /path/to/ACE-Step-1.5 ./acestep_repo
+# Navigate to ComfyUI custom_nodes directory
+cd ComfyUI/custom_nodes
+
+# Clone this repository
+git clone https://github.com/kana112233/ComfyUI-kaola-ace_step.git
+
+# Restart ComfyUI
 ```
 
-## Usage
+### Configuration / 配置
 
-### Text to Music
+In any ACE-Step node, set the following paths:
 
-Generate music from text description with optional parameters:
+在任何 ACE-Step 节点中，设置以下路径：
 
-- **caption**: Text description of the music
-- **lyrics**: Optional lyrics
-- **duration**: Target duration in seconds (10-600)
-- **bpm**: Beats per minute (0 = auto)
-- **keyscale**: Musical key (empty = auto)
-- **instrumental**: Generate instrumental music
-- **inference_steps**: Number of denoising steps (8 for turbo, 32-64 for base)
-- **seed**: Random seed (-1 for random)
-
-### Cover
-
-Transform existing audio:
-
-- **src_audio**: Input audio
-- **caption**: Desired style transformation
-- **audio_cover_strength**: How much to follow original (0.0-1.0)
-
-### Repaint
-
-Regenerate specific segments:
-
-- **src_audio**: Input audio
-- **caption**: Description for repainted section
-- **repainting_start**: Start time in seconds
-- **repainting_end**: End time in seconds (-1 for end)
-
-### Simple Mode
-
-Generate from natural language:
-
-- **query**: Natural language description
-- **vocal_language**: Optional language constraint
-- **instrumental**: Generate instrumental
-
-### Format Sample
-
-Format and enhance input:
-
-- **caption**: Raw caption
-- **lyrics**: Raw lyrics
-- **user_metadata**: Optional JSON with constraints (e.g., `{"bpm": 120}`)
-
-### Understand
-
-Analyze audio codes:
-
-- **audio_codes**: 5Hz audio semantic codes
-- Returns: caption, lyrics, BPM, duration, key, language
-
-## Configuration
-
-### Checkpoint Directory
-
-Set the path to your ACE-Step checkpoints (default: `./checkpoints`).
-
-### Model Selection
+- **checkpoint_dir**: Path to ACE-Step checkpoints
+  - Example: `/path/to/acestep_repo/checkpoints`
 
 - **config_path**: DiT model to use
-  - `acestep-v15-turbo` (default, fast)
-  - `acestep-v15-base` (higher quality)
-  - `acestep-v15-sft` (SFT model)
+  - `acestep-v15-turbo` (fast, recommended / 快速，推荐)
+  - `acestep-v15-base` (high quality / 高质量)
 
-- **lm_model_path**: LM model to use
-  - `acestep-5Hz-lm-0.6B` (lightweight, 6-12GB VRAM)
-  - `acestep-5Hz-lm-1.7B` (balanced, 12-16GB VRAM, default)
-  - `acestep-5Hz-lm-4B` (best quality, 16GB+ VRAM)
+- **lm_model_path**: Language model to use
+  - `acestep-5Hz-lm-0.6B` (6-12GB VRAM / 显存)
+  - `acestep-5Hz-lm-1.7B` (12-16GB VRAM, recommended / 推荐)
+  - `acestep-5Hz-lm-4B` (16GB+ VRAM / 显存)
 
-### Device
+## Usage Examples / 使用示例
 
-- **cuda**: NVIDIA GPU (recommended)
-- **cpu**: CPU (slower)
-- **mps**: Apple Silicon GPU
+### Example 1: Text to Music / 文本生成音乐
 
-## Tips
-
-1. **Quality vs Speed**: Use turbo model with 8 steps for speed, base model with 32-64 steps for quality
-2. **Memory**: Reduce batch size if you encounter OOM errors
-3. **Metadata**: Use Simple Mode for automatic metadata, or Text to Music for manual control
-4. **Seeds**: Set fixed seeds for reproducible results
-5. **LM**: Disable thinking (`thinking=False`) for faster generation if you have precise parameters
-
-## Examples
-
-### Electronic Dance Track
 ```
-caption: "upbeat electronic dance music with heavy bass and synthesizer leads"
-bpm: 128
-duration: 45
-instrumental: true
+ACE-Step Text to Music Node:
+├── caption: "upbeat electronic dance music with heavy bass"
+├── duration: 30
+├── bpm: 128
+└── Execute → Generate audio
 ```
 
-### Pop Ballad
-```
-caption: "emotional pop ballad with piano and strings"
-lyrics: [Verse 1]...[Chorus]...
-vocal_language: en
-bpm: 72
-duration: 180
-```
+### Example 2: Cover Generation / 翻唱生成
 
-### Cover Generation
 ```
-caption: "jazz piano arrangement with swing feel"
-audio_cover_strength: 0.7
+Load Audio → ACE-Step Cover Node:
+├── caption: "jazz piano arrangement with swing feel"
+└── audio_cover_strength: 0.7
 ```
 
-## Troubleshooting
+### Example 3: Simple Mode / 简单模式
 
-**"ACE-Step is not installed"**: Install ACE-Step and link it to `acestep_repo/`
+```
+ACE-Step Simple Mode Node:
+└── query: "energetic K-pop dance track with catchy hooks"
+```
 
-**"Out of memory"**: Reduce batch_size or use a smaller LM model
+## Nodes / 节点列表
 
-**"Failed to initialize handlers"**: Check checkpoint_dir path and model availability
+| Node | Description |
+|------|-------------|
+| **ACE_STEP_TextToMusic** | Generate music from text with full parameter control |
+| **ACE_STEP_Cover** | Transform existing audio to new style |
+| **ACE_STEP_Repaint** | Regenerate specific segments of audio |
+| **ACE_STEP_SimpleMode** | Generate from natural language (auto-metadata) |
+| **ACE_STEP_FormatSample** | Format and enhance user input |
+| **ACE_STEP_Understand** | Analyze audio semantic codes |
 
-**Poor quality**: Increase inference_steps, use base model, or adjust guidance_scale
+## System Requirements / 系统要求
 
-## License
+- **GPU**: NVIDIA GPU with 6GB+ VRAM recommended / 推荐使用 6GB+ 显存的 NVIDIA GPU
+- **CPU**: Works on CPU but slower / 支持 CPU 但速度较慢
+- **Disk**: ~8GB for models / 约 8GB 磁盘空间用于模型
+- **Python**: 3.10+ / Python 3.10 或更高版本
 
-MIT License - See [LICENSE](LICENSE) for details.
+## Documentation / 文档
 
-## Acknowledgments
+For detailed usage instructions, see [USAGE.md](USAGE.md).
+
+详细使用说明请参考 [USAGE.md](USAGE.md)。
+
+## Performance / 性能
+
+- **Ultra-Fast**: ~10s per song on RTX 3090 (turbo model) / RTX 3090 上约 10 秒一首歌
+- **Low VRAM**: <4GB for basic use / 基础使用小于 4GB 显存
+- **High Quality**: Commercial-grade output / 商业级质量输出
+
+## Troubleshooting / 故障排除
+
+**Problem**: "ACE-Step is not installed"
+- **Solution**: Install ACE-Step following the Quick Start guide / 按照快速开始指南安装
+
+**Problem**: Out of memory errors
+- **Solution**: Reduce `batch_size` or use smaller `lm_model_path` / 减少批量大小或使用更小的语言模型
+
+**Problem**: Poor quality results
+- **Solution**: Increase `inference_steps`, use base model / 增加推理步数，使用基础模型
+
+## Acknowledgments / 致谢
 
 Based on [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5) by ACE Studio and StepFun.
 
-## Links
+基于 ACE Studio 和 StepFun 的 [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5)。
+
+## License / 许可证
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Links / 链接
 
 - [ACE-Step GitHub](https://github.com/ace-step/ACE-Step-1.5)
 - [ACE-Step Hugging Face](https://huggingface.co/ACE-Step)
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
+- [ComfyUI Registry](https://registry.comfy.org)
+
+---
+
+**Made with ❤️ by kana112233**

@@ -1,30 +1,23 @@
 [project]
-name = "comfyui-ace-step-nodes"
-version = "1.0.0"
-description = "ComfyUI custom nodes for ACE-Step 1.5 music generation"
-readme = "README.md"
-requires-python = ">=3.10"
+name = "comfyui-kaola-ace-step"
+description = "ACE-Step 1.5 music generation nodes for ComfyUI - Generate high-quality music from text"
+version = "0.0.1"
+license = { text = "MIT" }
 dependencies = [
     "torch>=2.0.0",
-    "soundfile>=0.12.0",
     "numpy>=1.24.0",
+    "soundfile>=0.12.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "black",
-    "isort",
-    "flake8",
-]
+[project.urls]
+Repository = "https://github.com/kana112233/ComfyUI-kaola-ace_step"
+Documentation = "https://github.com/kana112233/ComfyUI-kaola-ace_step#readme"
+
+[tool.comfy]
+PublisherId = "kana112233"
+DisplayName = "Kaola ACE-Step Music"
+Icon = ""
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
-
-[tool.black]
-line-length = 100
-target-version = ['py310']
-
-[tool.isort]
-profile = "black"
-line_length = 100
