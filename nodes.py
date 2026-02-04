@@ -30,8 +30,8 @@ except ImportError:
     print("ACE-Step not installed. Please install it first: pip install acestep")
 
 # Register ACE-Step model directory with ComfyUI
-# Models should be placed in: ComfyUI/models/acestep/
-ACESTEP_MODEL_NAME = "acestep"
+# Models should be placed in: ComfyUI/models/Ace-Step1.5/
+ACESTEP_MODEL_NAME = "Ace-Step1.5"
 if ACESTEP_AVAILABLE:
     folder_paths.add_model_folder_path(ACESTEP_MODEL_NAME, os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME))
 

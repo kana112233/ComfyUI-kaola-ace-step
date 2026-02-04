@@ -5,7 +5,7 @@
 将 ACE-Step 模型放在 ComfyUI 的 models 目录下：
 
 ```
-ComfyUI/models/acestep/
+ComfyUI/models/Ace-Step1.5/
 ├── acestep-v15-turbo/          # DiT 模型
 │   ├── config.json
 │   ├── model.safetensors
@@ -28,7 +28,7 @@ ComfyUI/models/acestep/
 
 ```bash
 # 使用 huggingface-cli
-huggingface-cli download ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/acestep
+huggingface-cli download ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/Ace-Step1.5
 ```
 
 或手动下载：
@@ -40,7 +40,7 @@ huggingface-cli download ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/acestep
 
 ```bash
 # Linux/macOS
-ln -s /path/to/your/Ace-Step1.5/* ComfyUI/models/acestep/
+ln -s /path/to/your/Ace-Step1.5/* ComfyUI/models/Ace-Step1.5/
 ```
 
 ### 3. 验证安装

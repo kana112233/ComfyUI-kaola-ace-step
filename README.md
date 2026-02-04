@@ -34,11 +34,11 @@ pip install -r requirements.txt
 
 ```bash
 # Using huggingface-cli
-huggingface-cli download ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/acestep
+huggingface-cli download ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/Ace-Step1.5
 
 # Or using hfd (faster)
 pip install hfd
-hfd ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/acestep
+hfd ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/Ace-Step1.5
 ```
 
 ### 4. Restart ComfyUI
@@ -47,7 +47,7 @@ hfd ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/acestep
 
 | Parameter | Value |
 |----------|-------|
-| `checkpoint_dir` | Leave empty (uses `ComfyUI/models/acestep/`) |
+| `checkpoint_dir` | Leave empty (uses `ComfyUI/models/Ace-Step1.5/`) |
 | `config_path` | `acestep-v15-turbo` (fast) or `acestep-v15-base` (quality) |
 | `lm_model_path` | `acestep-5Hz-lm-1.7B` (recommended) |
 | `device` | `auto` (auto-detects MPS/CUDA/CPU) |
@@ -55,7 +55,7 @@ hfd ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/acestep
 ## Model Directory Structure
 
 ```
-ComfyUI/models/acestep/
+ComfyUI/models/Ace-Step1.5/
 ├── acestep-v15-turbo/
 ├── acestep-5Hz-lm-1.7B/
 ├── vae/
