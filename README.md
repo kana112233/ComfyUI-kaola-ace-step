@@ -18,7 +18,7 @@ ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5
 ```bash
 git clone https://github.com/ACE-Step/ACE-Step-1.5.git
 cd ACE-Step-1.5
-uv sync
+uv pip install -e .
 ```
 
 ### 2. Install ComfyUI Nodes
