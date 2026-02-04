@@ -116,7 +116,7 @@
       "mode": 0,
       "inputs": [
         {
-          "name": "text",
+          "name": "source",
           "type": "*",
           "link": 3
         }
