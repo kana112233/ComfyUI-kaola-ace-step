@@ -1,11 +1,63 @@
 # Test Report / 测试报告
 
 Date: 2026-02-04
-Version: 0.0.1
+Version: 0.1.0
 
 ## Summary / 总结
 
 ✅ **All tests passed!** / **所有测试通过！**
+
+## New in This Version / 本版本更新
+
+### ComfyUI Model Directory Support / ComfyUI 模型目录支持
+
+- ✅ Added `folder_paths` integration for model management
+- ✅ Models can now be placed in `ComfyUI/models/acestep/`
+- ✅ Automatic model directory detection
+- ✅ `checkpoint_dir` parameter now optional (defaults to ComfyUI model path)
+
+### Functional Testing / 功能测试
+
+#### Model Loading & Generation / 模型加载与生成
+
+Test environment: macOS (M4), Python 3.11, MPS backend
+
+测试环境：macOS (M4), Python 3.11, MPS 后端
+
+| Test | Result | Details |
+|------|--------|---------|
+| Model Directory Setup | ✅ Pass | Created symlinks to existing models |
+| Handler Initialization | ✅ Pass | DiT & LLM handlers initialized |
+| LLM Metadata Generation | ✅ Pass | Generated: bpm=130, key=G minor |
+| Audio Code Generation | ✅ Pass | Generated 75 audio codes |
+| DiT Diffusion | ✅ Pass | 4 steps completed in ~10s |
+| VAE Decoding | ✅ Pass | Tiled decode successful |
+| Audio Output | ✅ Pass | 15s audio, 1.43MB, FLAC format |
+| File Verification | ✅ Pass | Output file exists and playable |
+
+**Generated Audio Details / 生成音频详情：**
+- File: `/var/folders/.../9a585937-d207-2ff0-f61b-6e89350bacaf.flac`
+- Duration: 15 seconds
+- Sample Rate: 48000 Hz
+- Channels: Stereo (2)
+- Format: FLAC
+- Size: 1.43 MB
+
+**LLM Generated Metadata / LLM 生成的元数据：**
+```
+caption: An energetic progressive house track driven by bright, layered synth arpeggios...
+bpm: 130
+duration: 15
+keyscale: G minor
+language: unknown
+timesignature: 4
+```
+
+**Performance Metrics / 性能指标：**
+- Total generation time: ~40 seconds
+- LLM inference: ~15 seconds
+- DiT generation: ~10 seconds (4 steps)
+- Device: Apple M4 (MPS)
 
 ## Test Results / 测试结果
 

@@ -61,12 +61,29 @@ git clone https://github.com/kana112233/ComfyUI-kaola-ace_step.git
 
 ### Configuration / 配置
 
-In any ACE-Step node, set the following paths:
+**Model Directory / 模型目录**
 
-在任何 ACE-Step 节点中，设置以下路径：
+Models should be placed in ComfyUI's models directory:
 
-- **checkpoint_dir**: Path to ACE-Step checkpoints
-  - Example: `/path/to/acestep_repo/checkpoints`
+将模型放在 ComfyUI 的 models 目录下：
+
+```
+ComfyUI/models/acestep/
+├── acestep-v15-turbo/
+├── acestep-5Hz-lm-1.7B/
+├── vae/
+└── Qwen3-Embedding-0.6B/
+```
+
+For detailed setup instructions, see [MODEL_SETUP.md](MODEL_SETUP.md)
+
+详细设置说明请参考 [MODEL_SETUP.md](MODEL_SETUP.md)
+
+**Node Parameters / 节点参数**
+
+- **checkpoint_dir**: Leave empty to use default ComfyUI model directory
+  - 留空以使用 ComfyUI 默认模型目录 (`ComfyUI/models/acestep/`)
+  - Or specify custom path if needed / 或指定自定义路径
 
 - **config_path**: DiT model to use
   - `acestep-v15-turbo` (fast, recommended / 快速，推荐)

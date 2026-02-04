@@ -29,6 +29,12 @@ except ImportError:
     ACESTEP_AVAILABLE = False
     print("ACE-Step not installed. Please install it first: pip install acestep")
 
+# Register ACE-Step model directory with ComfyUI
+# Models should be placed in: ComfyUI/models/acestep/
+ACESTEP_MODEL_NAME = "acestep"
+if ACESTEP_AVAILABLE:
+    folder_paths.add_model_folder_path(ACESTEP_MODEL_NAME, os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME))
+
 
 class ACE_STEP_BASE:
     """Base class for ACE-Step nodes with handler management"""
@@ -54,19 +60,27 @@ class ACE_STEP_BASE:
             raise RuntimeError("ACE-Step is not installed. Please install it first.")
 
         try:
+            # Use ComfyUI's model directory if checkpoint_dir is not provided
+            if not checkpoint_dir or checkpoint_dir == "./checkpoints":
+                checkpoint_dir = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)[0]
+
+            # Create checkpoints symlink if it doesn't exist
+            # ACE-Step expects: {project_root}/checkpoints/{model_name}
+            # ComfyUI uses: {models_dir}/acestep/{model_name}
+            checkpoints_dir = os.path.join(checkpoint_dir, "checkpoints")
+            if not os.path.exists(checkpoints_dir):
+                # Create a symlink: checkpoints -> .
+                # This makes both paths work:
+                # - {models_dir}/acestep/{model_name}
+                # - {models_dir}/acestep/checkpoints/{model_name}
+                os.symlink(".", checkpoints_dir, target_is_directory=True)
+
             # Initialize DiT handler
             self.dit_handler = AceStepHandler()
 
-            # Monkey patch _get_project_root to use user's model directory
-            # This works around ACE-Step's hardcoded path detection
-            original_get_project_root = self.dit_handler._get_project_root
+            # Monkey patch _get_project_root to use ComfyUI's model directory
             def _patched_get_project_root():
-                # If checkpoint_dir contains models directly, use it
-                # Otherwise, use checkpoint_dir/checkpoints
-                if os.path.isdir(os.path.join(checkpoint_dir, config_path)):
-                    return checkpoint_dir
-                else:
-                    return os.path.dirname(checkpoint_dir) if checkpoint_dir.endswith("checkpoints") else checkpoint_dir
+                return checkpoint_dir
 
             self.dit_handler._get_project_root = _patched_get_project_root
 
@@ -101,7 +115,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         return {
             "required": {
                 "caption": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": "./checkpoints"}),
+                "checkpoint_dir": ("STRING", {"default": ""}),
                 "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
                 "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
                 "duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0}),
@@ -235,7 +249,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
             "required": {
                 "src_audio": ("AUDIO",),
                 "caption": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": "./checkpoints"}),
+                "checkpoint_dir": ("STRING", {"default": ""}),
                 "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
                 "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
                 "audio_cover_strength": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0}),
@@ -362,7 +376,7 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 "caption": ("STRING", {"default": "", "multiline": True}),
                 "repainting_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 600.0}),
                 "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0}),
-                "checkpoint_dir": ("STRING", {"default": "./checkpoints"}),
+                "checkpoint_dir": ("STRING", {"default": ""}),
                 "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
                 "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 2**32 - 1}),
@@ -483,7 +497,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         return {
             "required": {
                 "query": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": "./checkpoints"}),
+                "checkpoint_dir": ("STRING", {"default": ""}),
                 "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
                 "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8}),
@@ -623,7 +637,7 @@ class ACE_STEP_FORMAT_SAMPLE(ACE_STEP_BASE):
             "required": {
                 "caption": ("STRING", {"default": "", "multiline": True}),
                 "lyrics": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": "./checkpoints"}),
+                "checkpoint_dir": ("STRING", {"default": ""}),
                 "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
                 "device": (["cuda", "cpu", "mps"], {"default": "cuda"}),
             },
@@ -697,7 +711,7 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
         return {
             "required": {
                 "audio_codes": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": "./checkpoints"}),
+                "checkpoint_dir": ("STRING", {"default": ""}),
                 "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
                 "device": (["cuda", "cpu", "mps"], {"default": "cuda"}),
             },
