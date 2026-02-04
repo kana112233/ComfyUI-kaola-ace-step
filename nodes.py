@@ -895,13 +895,6 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
             result.keyscale,
             result.language,
         )
-            result.caption,
-            result.lyrics,
-            result.bpm or 0,
-            result.duration or 0.0,
-            result.keyscale,
-            result.language,
-        )
 
 
 
