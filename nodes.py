@@ -120,11 +120,12 @@ class ACE_STEP_BASE:
             )
 
             # Initialize LLM handler (pass dtype from DiT handler)
+            # Use "pt" backend instead of "vllm" to avoid process group conflicts with ComfyUI
             self.llm_handler = LLMHandler()
             self.llm_handler.initialize(
                 checkpoint_dir=checkpoint_dir,
                 lm_model_path=lm_model_path,
-                backend="vllm",
+                backend="pt",  # Use PyTorch backend to avoid vLLM conflicts
                 device=device,
                 offload_to_cpu=offload_to_cpu,
                 dtype=self.dit_handler.dtype,  # Critical: pass dtype from DiT handler
