@@ -246,6 +246,9 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         audio_tensor = audio_data["tensor"]
         sample_rate = audio_data["sample_rate"]
 
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
         # Convert tensor to numpy (channels, samples) -> (samples, channels)
         audio_np = audio_tensor.cpu().numpy().T
 
@@ -366,6 +369,9 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
             audio_path = audio_data["path"]
             audio_tensor = audio_data["tensor"]
             sample_rate = audio_data["sample_rate"]
+
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
 
             # Convert tensor to numpy
             audio_np = audio_tensor.cpu().numpy().T
@@ -489,6 +495,9 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
             audio_path = audio_data["path"]
             audio_tensor = audio_data["tensor"]
             sample_rate = audio_data["sample_rate"]
+
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
 
             # Convert tensor to numpy
             audio_np = audio_tensor.cpu().numpy().T
@@ -617,6 +626,9 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         audio_path = audio_data["path"]
         audio_tensor = audio_data["tensor"]
         sample_rate = audio_data["sample_rate"]
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
 
         # Convert tensor to numpy
         audio_np = audio_tensor.cpu().numpy().T
