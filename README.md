@@ -79,8 +79,9 @@ In any ACE-Step node, set the following paths:
 
 ## Usage Examples / 使用示例
 
-### Example 1: Text to Music / 文本生成音乐
+### Quick Examples / 快速示例
 
+#### Example 1: Text to Music / 文本生成音乐
 ```
 ACE-Step Text to Music Node:
 ├── caption: "upbeat electronic dance music with heavy bass"
@@ -89,20 +90,34 @@ ACE-Step Text to Music Node:
 └── Execute → Generate audio
 ```
 
-### Example 2: Cover Generation / 翻唱生成
-
+#### Example 2: Cover Generation / 翻唱生成
 ```
 Load Audio → ACE-Step Cover Node:
 ├── caption: "jazz piano arrangement with swing feel"
 └── audio_cover_strength: 0.7
 ```
 
-### Example 3: Simple Mode / 简单模式
-
+#### Example 3: Simple Mode / 简单模式
 ```
 ACE-Step Simple Mode Node:
 └── query: "energetic K-pop dance track with catchy hooks"
 ```
+
+### Full Workflow Examples / 完整工作流示例
+
+For ready-to-use ComfyUI workflows, see the [examples/](examples/) directory:
+
+完整的 ComfyUI 工作流示例，请查看 [examples/](examples/) 目录：
+
+- 📝 **[Text to Music](examples/text_to_music.json)** - Generate music from text / 从文本生成音乐
+- 💡 **[Simple Mode](examples/simple_mode.json)** - Natural language to music / 自然语言生成音乐
+- 🎭 **[Cover Generation](examples/cover_generation.json)** - Style transfer / 风格转换
+- 📦 **[Batch Generation](examples/batch_generation.json)** - Multiple variations / 批量生成
+- 🎵 **[Music with Lyrics](examples/music_with_lyrics.json)** - Complete songs / 完整歌曲
+
+See [examples/README.md](examples/README.md) for detailed usage instructions.
+
+详细使用说明请参考 [examples/README.md](examples/README.md)。
 
 ## Nodes / 节点列表
 
