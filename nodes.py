@@ -214,10 +214,15 @@ class ACE_STEP_BASE:
     ):
         """Initialize ACE-Step handlers if not already initialized"""
         if self.handlers_initialized:
-            # Clear CUDA cache before reusing handlers to prevent OOM
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            return self.dit_handler, self.llm_handler
+            # Check if handlers are truly initialized (model loaded)
+            if self.dit_handler and getattr(self.dit_handler, "model", None) is not None:
+                # Clear CUDA cache before reusing handlers to prevent OOM
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                return self.dit_handler, self.llm_handler
+            
+            print("[initialize_handlers] Handlers marked initialized but model is None. Re-initializing.")
+            self.handlers_initialized = False
 
         if not ACESTEP_AVAILABLE:
             raise RuntimeError("ACE-Step is not installed. Please install it first.")
