@@ -858,106 +858,6 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
 
 
 
-class ACE_STEP_SaveAudio:
-    """Save audio to file with customizable format"""
-
-    def __init__(self):
-        self.output_dir = folder_paths.get_output_directory()
-        self.type = "output"
-        self.prefix_append = ""
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "audio": ("AUDIO",),
-                "filename_prefix": ("STRING", {"default": "acestep_audio"}),
-                "format": (["wav", "flac", "mp3"], {"default": "wav"}),
-            },
-        }
-
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("save_path",)
-    FUNCTION = "save_audio"
-    OUTPUT_NODE = True
-    CATEGORY = "Audio/ACE-Step"
-
-    def save_audio(
-        self,
-        audio: Dict[str, Any],
-        filename_prefix: str = "acestep_audio",
-        format: str = "wav",
-    ) -> Tuple[str]:
-        # Extract audio tensor and sample rate
-        if not isinstance(audio, dict) or "tensor" not in audio:
-            # Try to handle generic Comfy audio format (usually {"waveform": ..., "sample_rate": ...})
-            if isinstance(audio, dict) and "waveform" in audio:
-                 audio_tensor = audio["waveform"]
-                 sample_rate = audio.get("sample_rate", 44100)
-            else:
-                 raise ValueError("Invalid audio input format. Expected ACE-Step audio dict.")
-        else:
-            audio_tensor = audio["tensor"]
-            # Check tensor shape [channels, samples] or [batch, channels, samples]
-            if len(audio_tensor.shape) == 3:
-                # If batch dim exists, take first item (Comfy way usually handles batches by list, but safety check)
-                audio_tensor = audio_tensor[0]
-            
-            sample_rate = audio.get("sample_rate", 48000)
-
-        # Ensure tensor is on CPU
-        if hasattr(audio_tensor, "cpu"):
-            audio_tensor = audio_tensor.cpu()
-        
-        # Ensure tensor is float32
-        if audio_tensor.dtype != torch.float32:
-            audio_tensor = audio_tensor.to(torch.float32)
-
-        # Generate filename
-        filename_prefix += self.prefix_append
-        full_output_dir = self.output_dir
-        
-        # Helper to get unique filename
-        def get_unique_filename(directory, prefix, extension):
-            counter = 1
-            filename = f"{prefix}_{counter:05d}.{extension}"
-            while os.path.exists(os.path.join(directory, filename)):
-                counter += 1
-                filename = f"{prefix}_{counter:05d}.{extension}"
-            return os.path.join(directory, filename)
-
-        # Create output path
-        output_path = get_unique_filename(full_output_dir, filename_prefix, format)
-
-        # Normalize audio if needed (optional, keeping raw for now)
-        # But ensure it's in [-1, 1] for saving if not
-        
-        try:
-            import torchaudio
-            # torchaudio expects [channels, samples]
-            if len(audio_tensor.shape) == 1:
-                audio_tensor = audio_tensor.unsqueeze(0)
-            
-            torchaudio.save(output_path, audio_tensor, sample_rate, format=format)
-            print(f"[ACE_STEP_SaveAudio] Saved to {output_path}")
-
-        except Exception as e:
-            # Fallback to soundfile if torchaudio fails (or format issue)
-            try:
-                import soundfile as sf
-                # soundfile expects [samples, channels]
-                numpy_audio = audio_tensor.numpy()
-                if numpy_audio.shape[0] < 10: # Likely [channels, samples]
-                     numpy_audio = numpy_audio.T
-                
-                sf.write(output_path, numpy_audio, sample_rate)
-                print(f"[ACE_STEP_SaveAudio] Data fallback saved to {output_path}")
-            except Exception as e2:
-                 raise RuntimeError(f"Failed to save audio: {e} | Fallback error: {e2}")
-
-        return (output_path,)
-
-
 # Node mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
     "ACE_STEP_TextToMusic": ACE_STEP_TEXT_TO_MUSIC,
@@ -966,7 +866,6 @@ NODE_CLASS_MAPPINGS = {
     "ACE_STEP_SimpleMode": ACE_STEP_SIMPLE_MODE,
     "ACE_STEP_FormatSample": ACE_STEP_FORMAT_SAMPLE,
     "ACE_STEP_Understand": ACE_STEP_UNDERSTAND,
-    "ACE_STEP_SaveAudio": ACE_STEP_SaveAudio,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -976,5 +875,4 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_SimpleMode": "ACE-Step Simple Mode",
     "ACE_STEP_FormatSample": "ACE-Step Format Sample",
     "ACE_STEP_Understand": "ACE-Step Understand",
-    "ACE_STEP_SaveAudio": "ACE-Step Save Audio",
 }
