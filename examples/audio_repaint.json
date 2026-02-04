@@ -56,6 +56,7 @@
                 "acestep-v15-turbo",
                 "acestep-5Hz-lm-1.7B",
                 -1,
+                "randomize",
                 8,
                 "auto",
                 true,
