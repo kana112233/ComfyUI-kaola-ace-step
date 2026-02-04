@@ -4,10 +4,55 @@ ACE-Step 1.5 Music Generation Nodes
 
 import os
 import sys
-import torch
+import ctypes
 
-# Force load libgomp/libiomp5 by importing torch first
-# os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+# --------------------------------------------------------------------------------
+# CRITICAL: Fix OpenMP library conflicts between PyTorch and ComfyUI
+# This MUST execute before any other imports to prevent ld.so crash
+# --------------------------------------------------------------------------------
+def _preload_libgomp():
+    """
+    Preload libgomp with RTLD_GLOBAL | RTLD_NOW to ensure all libraries
+    use the same OpenMP runtime. Must be called before importing torch.
+    """
+    libgomp_loaded = False
+
+    # Method 1: Try conda environment
+    conda_prefix = os.environ.get("CONDA_PREFIX", "")
+    if conda_prefix:
+        lib_paths = [
+            os.path.join(conda_prefix, "lib", "libgomp.so.1"),
+            os.path.join(conda_prefix, "lib", "libgomp.so"),
+        ]
+        for path in lib_paths:
+            if os.path.exists(path):
+                try:
+                    ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL | ctypes.RTLD_NOW)
+                    print(f"[ACE-Step] Preloaded {path}")
+                    libgomp_loaded = True
+                    break
+                except Exception as e:
+                    print(f"[ACE-Step] Failed to load {path}: {e}")
+
+    # Method 2: Try system library paths
+    if not libgomp_loaded:
+        try:
+            ctypes.CDLL("libgomp.so.1", mode=ctypes.RTLD_GLOBAL | ctypes.RTLD_NOW)
+            print("[ACE-Step] Preloaded system libgomp.so.1")
+            libgomp_loaded = True
+        except Exception:
+            pass
+
+    if not libgomp_loaded:
+        print("[ACE-Step] Warning: Could not preload libgomp, may experience OpenMP conflicts")
+
+    return libgomp_loaded
+
+# Execute immediately before any other imports
+_preload_libgomp()
+# --------------------------------------------------------------------------------
+
+import torch
 import json
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
