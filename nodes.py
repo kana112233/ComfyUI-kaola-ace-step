@@ -39,6 +39,8 @@ import sys
 import torch
 import json
 import numpy as np
+import tempfile
+import soundfile as sf
 from typing import Dict, List, Optional, Tuple, Any
 import folder_paths
 
@@ -810,7 +812,7 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "audio_codes": ("STRING", {"default": "", "multiline": True}),
+                "audio": ("AUDIO",),
                 "checkpoint_dir": ("STRING", {"default": ""}),
                 "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
@@ -824,7 +826,7 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
 
     def understand(
         self,
-        audio_codes: str,
+        audio: Dict[str, torch.Tensor],
         checkpoint_dir: str,
         lm_model_path: str,
         device: str,
@@ -832,15 +834,53 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
         # Initialize handlers
         dit_handler, llm_handler = self.initialize_handlers(
             checkpoint_dir=checkpoint_dir,
-            config_path="acestep-v15-turbo",  # Dummy
+            config_path="acestep-v15-turbo",  # Dummy config path, needed to init handler
             lm_model_path=lm_model_path,
             device=device,
         )
 
-        # Understand music
+        # 1. Save input audio tensor to temp file so handler can process it
+        # Audio tensor is [1, channels, samples] or [channels, samples]
+        audio_tensor = audio.get("waveform")
+        sample_rate = audio.get("sample_rate", 44100)
+        
+        if audio_tensor is None:
+             raise ValueError("Input audio does not contain waveform")
+
+        # Normalize to [channels, samples]
+        if audio_tensor.dim() == 3:
+            # [batch, channels, samples] -> take first batch
+            audio_tensor = audio_tensor[0]
+            
+        # soundfile expects [samples, channels]
+        audio_np = audio_tensor.cpu().numpy().T
+        
+        temp_audio_path = ""
+        try:
+             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                 temp_audio_path = f.name
+                 
+             sf.write(temp_audio_path, audio_np, sample_rate)
+             
+             # 2. Convert Audio -> Codes using VAE+DiT Tokenizer
+             # Note: convert_src_audio_to_codes is in AceStepHandler (dit_handler)
+             input_codes = dit_handler.convert_src_audio_to_codes(temp_audio_path)
+             
+             if not input_codes or input_codes.startswith("❌"):
+                 raise RuntimeError(f"Failed to encode audio: {input_codes}")
+                 
+        finally:
+             # Cleanup temp file
+             if temp_audio_path and os.path.exists(temp_audio_path):
+                 try:
+                     os.remove(temp_audio_path)
+                 except:
+                     pass
+
+        # 3. Understand music from codes
         result = understand_music(
             llm_handler=llm_handler,
-            audio_codes=audio_codes,
+            audio_codes=input_codes,
             temperature=0.85,
         )
 
@@ -848,6 +888,13 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
             raise RuntimeError(f"Understanding failed: {result.error}")
 
         return (
+            result.caption,
+            result.lyrics,
+            result.bpm or 0,
+            result.duration or 0.0,
+            result.keyscale,
+            result.language,
+        )
             result.caption,
             result.lyrics,
             result.bpm or 0,
