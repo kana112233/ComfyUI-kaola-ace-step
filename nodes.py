@@ -84,6 +84,14 @@ class ACE_STEP_BASE:
             if not checkpoint_dir or checkpoint_dir == "./checkpoints":
                 checkpoint_dir = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)[0]
 
+            # Check if checkpoint directory exists
+            if not os.path.exists(checkpoint_dir):
+                raise RuntimeError(
+                    f"Model directory not found: {checkpoint_dir}\n"
+                    f"Please download ACE-Step models to this location.\n"
+                    f"See https://github.com/ACE-Step/Ace-Step1.5"
+                )
+
             # Create checkpoints symlink if it doesn't exist
             # ACE-Step expects: {project_root}/checkpoints/{model_name}
             # ComfyUI uses: {models_dir}/acestep/{model_name}
