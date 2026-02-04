@@ -63,6 +63,54 @@ except ImportError:
     ACESTEP_AVAILABLE = False
     print("ACE-Step not installed. Please install it first: pip install acestep")
 
+# --------------------------------------------------------------------------------
+# MonkeyPatch process_src_audio to use soundfile instead of torchaudio
+# This is to avoid format errors or libtorchcodec issues with torchaudio in some envs
+# --------------------------------------------------------------------------------
+if ACESTEP_AVAILABLE:
+    def patched_process_src_audio(self, audio_file) -> Optional[torch.Tensor]:
+        if audio_file is None:
+            return None
+            
+        try:
+            # Load audio file using soundfile (more robust)
+            audio_np, sr = sf.read(audio_file, dtype='float32')
+            
+            # Convert to torch: [samples, channels] or [samples] -> [channels, samples]
+            if audio_np.ndim == 1:
+                audio = torch.from_numpy(audio_np).unsqueeze(0)
+            else:
+                audio = torch.from_numpy(audio_np.T)
+            
+            # Normalize to stereo 48kHz (using internal helper if available, or manual)
+            # The original handler has _normalize_audio_to_stereo_48k
+            if hasattr(self, '_normalize_audio_to_stereo_48k'):
+                 audio = self._normalize_audio_to_stereo_48k(audio, sr)
+            else:
+                 # Fallback normalization logic just in case
+                 if audio.shape[0] == 1:
+                    audio = torch.cat([audio, audio], dim=0)
+                 audio = audio[:2]
+                 if sr != 48000:
+                    import torchaudio.transforms as T
+                    # Resample needs channels first
+                    resampler = T.Resample(sr, 48000)
+                    audio = resampler(audio)
+                 audio = torch.clamp(audio, -1.0, 1.0)
+            
+            return audio
+            
+        except Exception as e:
+            print(f"[patched_process_src_audio] Error processing source audio: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    # Apply the patch
+    AceStepHandler.process_src_audio = patched_process_src_audio
+    print("Monkeypatched AceStepHandler.process_src_audio to use soundfile")
+
+
 # Register ACE-Step model directory with ComfyUI
 # Models should be placed in: ComfyUI/models/Ace-Step1.5/
 ACESTEP_MODEL_NAME = "Ace-Step1.5"
