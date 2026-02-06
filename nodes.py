@@ -424,12 +424,10 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         if torch.cuda.is_available():
             torch.cuda.synchronize()
 
-        # Convert tensor to numpy (channels, samples) -> (samples, channels)
-        audio_np = audio_tensor.cpu().numpy().T
-
         # Prepare ComfyUI audio format
+        # audio_tensor shape: [channels, samples] -> [1, channels, samples]
         audio_output = {
-            "waveform": torch.from_numpy(audio_np).unsqueeze(0),  # Add batch dimension
+            "waveform": audio_tensor.cpu().unsqueeze(0),
             "sample_rate": sample_rate,
         }
 
@@ -553,12 +551,10 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
 
-            # Convert tensor to numpy
-            audio_np = audio_tensor.cpu().numpy().T
-
             # Prepare ComfyUI audio format
+            # audio_tensor shape: [channels, samples] -> [1, channels, samples]
             audio_output = {
-                "waveform": torch.from_numpy(audio_np).unsqueeze(0),
+                "waveform": audio_tensor.cpu().unsqueeze(0),
                 "sample_rate": sample_rate,
             }
 
@@ -684,12 +680,10 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
 
-            # Convert tensor to numpy
-            audio_np = audio_tensor.cpu().numpy().T
-
             # Prepare ComfyUI audio format
+            # audio_tensor shape: [channels, samples] -> [1, channels, samples]
             audio_output = {
-                "waveform": torch.from_numpy(audio_np).unsqueeze(0),
+                "waveform": audio_tensor.cpu().unsqueeze(0),
                 "sample_rate": sample_rate,
             }
 
@@ -819,12 +813,10 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         if torch.cuda.is_available():
             torch.cuda.synchronize()
 
-        # Convert tensor to numpy
-        audio_np = audio_tensor.cpu().numpy().T
-
         # Prepare ComfyUI audio format
+        # audio_tensor shape: [channels, samples] -> [1, channels, samples]
         audio_output = {
-            "waveform": torch.from_numpy(audio_np).unsqueeze(0),
+            "waveform": audio_tensor.cpu().unsqueeze(0),
             "sample_rate": sample_rate,
         }
 
