@@ -2,6 +2,11 @@
 
 ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5) - Commercial-grade music generation.
 
+## ⚠️ Important: Python Version Requirement
+
+> **ACE-Step requires Python 3.11**. It is NOT compatible with Python 3.12 or 3.13.  
+> If you're using ComfyUI with Python 3.13, you'll need to set up a Python 3.11 environment.
+
 ## Features
 
 - 🎵 **Text to Music** - Generate music from text
@@ -13,21 +18,41 @@ ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5
 
 ## Quick Start
 
-### 1. Install ACE-Step
+### 1. Install ACE-Step (Python 3.11 Required!)
 
 ```bash
+# Ensure you're using Python 3.11
+python --version  # Should show Python 3.11.x
+
 git clone https://github.com/ACE-Step/ACE-Step-1.5.git
 cd ACE-Step-1.5
-uv pip install -e .
+pip install -e .
 ```
 
 ### 2. Install ComfyUI Nodes
 
+**Standard Installation:**
 ```bash
 cd ComfyUI/custom_nodes
 git clone https://github.com/kana112233/ComfyUI-kaola-ace-step.git
 cd ComfyUI-kaola-ace-step
 pip install -r requirements.txt
+```
+
+**For ComfyUI Portable:**
+```bash
+# Navigate to your ComfyUI portable folder
+cd ComfyUI_windows_portable/ComfyUI/custom_nodes
+git clone https://github.com/kana112233/ComfyUI-kaola-ace-step.git
+
+# Use the embedded Python to install requirements
+cd ComfyUI-kaola-ace-step
+../../python_embeded/python.exe -m pip install -r requirements.txt
+
+# You must also install ACE-Step in the embedded Python:
+cd ../../../
+git clone https://github.com/ACE-Step/ACE-Step-1.5.git
+python_embeded/python.exe -m pip install -e ACE-Step-1.5
 ```
 
 ### 3. Download Models
@@ -54,12 +79,15 @@ hfd ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/Ace-Step1.5
 
 ## Model Directory Structure
 
+Ensure your models are organized like this:
+
 ```
 ComfyUI/models/Ace-Step1.5/
-├── acestep-v15-turbo/
-├── acestep-5Hz-lm-1.7B/
-├── vae/
-└── Qwen3-Embedding-0.6B/
+├── acestep-v15-turbo/      # DiT model (turbo version)
+├── acestep-v15-base/       # DiT model (base version, optional)
+├── acestep-5Hz-lm-1.7B/    # LM model
+├── vae/                    # VAE model
+└── Qwen3-Embedding-0.6B/   # Embedding model
 ```
 
 ## Workflow Examples
@@ -79,9 +107,20 @@ See [examples/](examples/) directory for ready-to-use workflows.
 
 ## Requirements
 
-- **Python**: 3.11 (required for ACE-Step)
+- **Python**: 3.11 (required by ACE-Step, NOT compatible with 3.12/3.13)
 - **GPU**: 6GB+ VRAM recommended
 - **Disk**: ~8GB for models
+
+## Troubleshooting
+
+### "Cannot install ACE-Step with Python 3.13"
+ACE-Step requires Python 3.11. You need to:
+1. Install Python 3.11
+2. Create a new virtual environment with Python 3.11
+3. Run ComfyUI in that environment
+
+### "Model path not found"
+Ensure models are in `ComfyUI/models/Ace-Step1.5/` with the correct subdirectory structure (see above).
 
 ## License
 

@@ -111,7 +111,12 @@
             "widgets_values": [
                 "",
                 "acestep-5Hz-lm-1.7B",
-                "auto"
+                "acestep-v15-turbo",
+                30.0,
+                "auto",
+                "auto",
+                0.3,
+                true
             ]
         },
         {

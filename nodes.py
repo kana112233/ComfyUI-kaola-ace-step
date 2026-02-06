@@ -110,12 +110,89 @@ if ACESTEP_AVAILABLE:
     AceStepHandler.process_src_audio = patched_process_src_audio
     print("Monkeypatched AceStepHandler.process_src_audio to use soundfile")
 
+    # --------------------------------------------------------------------------------
+    # MonkeyPatch convert_src_audio_to_codes to fix multi-codebook flattening issue
+    # The DiT tokenizer might return multiple codebooks (e.g. 8), but 5Hz LM expects
+    # only the first semantic codebook. Flattening all of them causes garbage input.
+    # --------------------------------------------------------------------------------
+    def patched_convert_src_audio_to_codes(self, audio_file) -> str:
+        if audio_file is None:
+            return "❌ Please upload source audio first"
+        
+        if self.model is None or self.vae is None:
+            return "❌ Model not initialized. Please initialize the service first."
+        
+        try:
+            # Process audio file (uses patched_process_src_audio internally if patched)
+            processed_audio = self.process_src_audio(audio_file)
+            if processed_audio is None:
+                return "❌ Failed to process audio file"
+            
+            # Encode audio to latents using VAE
+            with torch.no_grad():
+                with self._load_model_context("vae"):
+                    # Check if audio is silence
+                    if self.is_silence(processed_audio.unsqueeze(0)):
+                        return "❌ Audio file appears to be silent"
+                    
+                    # Encode to latents using helper method
+                    latents = self._encode_audio_to_latents(processed_audio)  # [T, d]
+                
+                # Create attention mask for latents
+                attention_mask = torch.ones(latents.shape[0], dtype=torch.bool, device=self.device)
+                
+                # Tokenize latents to get code indices
+                with self._load_model_context("model"):
+                    # Prepare latents for tokenize: [T, d] -> [1, T, d]
+                    hidden_states = latents.unsqueeze(0)  # [1, T, d]
+                    
+                    # Call tokenize method
+                    # tokenize returns: (quantized, indices, attention_mask)
+                    # Note: indices shape is typically [1, T, num_quantizers]
+                    _, indices, _ = self.model.tokenize(hidden_states, self.silence_latent, attention_mask.unsqueeze(0))
+                    
+                    # FIX: If multiple codebooks, take only the first one (semantic codes)
+                    if indices.dim() == 3 and indices.shape[-1] > 1:
+                        # print(f"[debug_nodes] Detected multiple codebooks: {indices.shape}. Selecting first one.")
+                        indices = indices[..., 0]
+                    
+                    # Format indices as code string
+                    # indices shape now: [1, T_5Hz]
+                    indices_flat = indices.flatten().cpu().tolist()
+                    codes_string = "".join([f"<|audio_code_{idx}|>" for idx in indices_flat])
+                    
+                    return codes_string
+                    
+        except Exception as e:
+            error_msg = f"❌ Error converting audio to codes: {str(e)}"
+            # import traceback
+            # traceback.print_exc()
+            return error_msg
+
+    AceStepHandler.convert_src_audio_to_codes = patched_convert_src_audio_to_codes
+    print("Monkeypatched AceStepHandler.convert_src_audio_to_codes to select first codebook")
+
 
 # Register ACE-Step model directory with ComfyUI
 # Models should be placed in: ComfyUI/models/Ace-Step1.5/
 ACESTEP_MODEL_NAME = "Ace-Step1.5"
 if ACESTEP_AVAILABLE:
     folder_paths.add_model_folder_path(ACESTEP_MODEL_NAME, os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME))
+
+def get_acestep_models():
+    if not ACESTEP_AVAILABLE:
+        return []
+    model_dir = os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)
+    if not os.path.exists(model_dir):
+        return []
+    # List subdirectories
+    models = [name for name in os.listdir(model_dir) if os.path.isdir(os.path.join(model_dir, name))]
+    # Ensure defaults are present if not found (for UI stability)
+    defaults = ["acestep-5Hz-lm-1.7B", "acestep-v15-turbo"]
+    for d in defaults:
+        if d not in models:
+            models.append(d)
+    return sorted(list(set(models)))
 
 
 class ACE_STEP_BASE:
@@ -152,10 +229,15 @@ class ACE_STEP_BASE:
     ):
         """Initialize ACE-Step handlers if not already initialized"""
         if self.handlers_initialized:
-            # Clear CUDA cache before reusing handlers to prevent OOM
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            return self.dit_handler, self.llm_handler
+            # Check if handlers are truly initialized (model loaded)
+            if self.dit_handler and getattr(self.dit_handler, "model", None) is not None:
+                # Clear CUDA cache before reusing handlers to prevent OOM
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                return self.dit_handler, self.llm_handler
+            
+            print("[initialize_handlers] Handlers marked initialized but model is None. Re-initializing.")
+            self.handlers_initialized = False
 
         if not ACESTEP_AVAILABLE:
             raise RuntimeError("ACE-Step is not installed. Please install it first.")
@@ -236,8 +318,8 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             "required": {
                 "caption": ("STRING", {"default": "", "multiline": True}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
                 "duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0}),
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
@@ -343,13 +425,11 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             torch.cuda.synchronize()
 
         # Prepare ComfyUI audio format
-        # audio_tensor is [channels, samples] from handler
-        # ComfyUI expects [batch, channels, samples], so just add batch dimension
+        # audio_tensor shape: [channels, samples] -> [1, channels, samples]
         audio_output = {
-            "waveform": audio_tensor.cpu().unsqueeze(0),  # [channels, samples] -> [1, channels, samples]
+            "waveform": audio_tensor.cpu().unsqueeze(0),
             "sample_rate": sample_rate,
         }
-
 
         # Prepare metadata
         metadata = json.dumps(
@@ -377,8 +457,8 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 "src_audio": ("AUDIO",),
                 "caption": ("STRING", {"default": "", "multiline": True}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
                 "audio_cover_strength": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0}),
                 "batch_size": ("INT", {"default": 1, "min": 1, "max": 8}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
@@ -472,13 +552,11 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 torch.cuda.synchronize()
 
             # Prepare ComfyUI audio format
-            # audio_tensor is [channels, samples] from handler
-            # ComfyUI expects [batch, channels, samples], so just add batch dimension
+            # audio_tensor shape: [channels, samples] -> [1, channels, samples]
             audio_output = {
-                "waveform": audio_tensor.cpu().unsqueeze(0),  # [channels, samples] -> [1, channels, samples]
+                "waveform": audio_tensor.cpu().unsqueeze(0),
                 "sample_rate": sample_rate,
             }
-
 
             # Prepare metadata
             metadata = json.dumps(
@@ -512,8 +590,8 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 "repainting_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 600.0}),
                 "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
@@ -603,13 +681,11 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 torch.cuda.synchronize()
 
             # Prepare ComfyUI audio format
-            # audio_tensor is [channels, samples] from handler
-            # ComfyUI expects [batch, channels, samples], so just add batch dimension
+            # audio_tensor shape: [channels, samples] -> [1, channels, samples]
             audio_output = {
-                "waveform": audio_tensor.cpu().unsqueeze(0),  # [channels, samples] -> [1, channels, samples]
+                "waveform": audio_tensor.cpu().unsqueeze(0),
                 "sample_rate": sample_rate,
             }
-
 
             # Prepare metadata
             metadata = json.dumps(
@@ -641,8 +717,8 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             "required": {
                 "query": ("STRING", {"default": "", "multiline": True}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
-                "config_path": ("STRING", {"default": "acestep-v15-turbo"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
@@ -737,17 +813,12 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         if torch.cuda.is_available():
             torch.cuda.synchronize()
 
-        # Convert tensor to numpy
-        audio_np = audio_tensor.cpu().numpy().T
-
         # Prepare ComfyUI audio format
-        # audio_tensor is [channels, samples] from handler
-        # ComfyUI expects [batch, channels, samples], so just add batch dimension
+        # audio_tensor shape: [channels, samples] -> [1, channels, samples]
         audio_output = {
-            "waveform": audio_tensor.cpu().unsqueeze(0),  # [channels, samples] -> [1, channels, samples]
+            "waveform": audio_tensor.cpu().unsqueeze(0),
             "sample_rate": sample_rate,
         }
-
 
         # Prepare metadata
         metadata = json.dumps(
@@ -791,7 +862,7 @@ class ACE_STEP_FORMAT_SAMPLE(ACE_STEP_BASE):
                 "caption": ("STRING", {"default": "", "multiline": True}),
                 "lyrics": ("STRING", {"default": "", "multiline": True}),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
             },
             "optional": {
@@ -865,87 +936,117 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
             "required": {
                 "audio": ("AUDIO",),
                 "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": ("STRING", {"default": "acestep-5Hz-lm-1.7B"}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
+                "target_duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+            },
+            "optional": {
+                "language": (["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt", "nl", "tr", "pl", "ar", "vi", "th"], {"default": "auto"}),
+                "temperature": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0}),
+                "thinking": ("BOOLEAN", {"default": True}),
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING", "INT", "FLOAT", "STRING", "STRING")
-    RETURN_NAMES = ("caption", "lyrics", "bpm", "duration", "keyscale", "language")
+    RETURN_TYPES = ("STRING", "STRING", "FLOAT", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("analysis_text", "caption", "duration", "bpm", "keyscale", "lyrics")
     FUNCTION = "understand"
     CATEGORY = "Audio/ACE-Step"
+    OUTPUT_NODE = True
 
     def understand(
         self,
-        audio: Dict[str, torch.Tensor],
+        audio: Dict[str, Any],
         checkpoint_dir: str,
         lm_model_path: str,
+        config_path: str,
+        target_duration: float,
         device: str,
-    ) -> Tuple[str, str, int, float, str, str]:
-        # Initialize handlers
-        dit_handler, llm_handler = self.initialize_handlers(
-            checkpoint_dir=checkpoint_dir,
-            config_path="acestep-v15-turbo",  # Dummy config path, needed to init handler
-            lm_model_path=lm_model_path,
-            device=device,
-        )
+        language: str = "auto",
+        temperature: float = 0.3,
+        thinking: bool = True,
+    ) -> Tuple[str, str, float, str, str, str]:
+        import tempfile
+        import acestep.llm_inference
 
-        # 1. Save input audio tensor to temp file so handler can process it
-        # Audio tensor is [1, channels, samples] or [channels, samples]
-        audio_tensor = audio.get("waveform")
-        sample_rate = audio.get("sample_rate", 44100)
-        
-        if audio_tensor is None:
-             raise ValueError("Input audio does not contain waveform")
+        # Clear CUDA cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-        # Normalize to [channels, samples]
-        if audio_tensor.dim() == 3:
-            # [batch, channels, samples] -> take first batch
-            audio_tensor = audio_tensor[0]
-            
-        # soundfile expects [samples, channels]
-        audio_np = audio_tensor.cpu().numpy().T
-        
-        temp_audio_path = ""
+        # Save input audio to temp file
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            temp_path = tmp.name
+            waveform = audio["waveform"].squeeze(0).numpy().T
+            import soundfile as sf
+            sf.write(temp_path, waveform, audio["sample_rate"])
+
         try:
-             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                 temp_audio_path = f.name
-                 
-             sf.write(temp_audio_path, audio_np, sample_rate)
-             
-             # 2. Convert Audio -> Codes using VAE+DiT Tokenizer
-             # Note: convert_src_audio_to_codes is in AceStepHandler (dit_handler)
-             input_codes = dit_handler.convert_src_audio_to_codes(temp_audio_path)
-             
-             if not input_codes or input_codes.startswith("❌"):
-                 raise RuntimeError(f"Failed to encode audio: {input_codes}")
-                 
+            # Initialize handlers
+            dit_handler, llm_handler = self.initialize_handlers(
+                checkpoint_dir=checkpoint_dir,
+                config_path=config_path,
+                lm_model_path=lm_model_path,
+                device=device,
+            )
+
+            # Convert audio to codes
+            print(f"[understand] Converting audio to codes for {target_duration}s...")
+            input_codes = dit_handler.convert_src_audio_to_codes(temp_path)
+            
+            # Handle potential error message from conversion
+            if isinstance(input_codes, str) and input_codes.startswith("❌"):
+                raise RuntimeError(input_codes)
+            
+            # Dynamic Monkeypatch: Inject language hint if specified
+            original_instruction = acestep.llm_inference.DEFAULT_LM_UNDERSTAND_INSTRUCTION
+            if language != "auto":
+                lang_instruction = f" The vocal language is {language}."
+                # Append if not already present (to avoid double appending on re-runs if global state persists differently)
+                if lang_instruction not in acestep.llm_inference.DEFAULT_LM_UNDERSTAND_INSTRUCTION:
+                     acestep.llm_inference.DEFAULT_LM_UNDERSTAND_INSTRUCTION += lang_instruction
+                     print(f"[understand] Injected language hint: {lang_instruction}")
+
+            try:
+                # Call understand_music
+                result = understand_music(
+                    llm_handler=llm_handler,
+                    audio_codes=input_codes,
+                    temperature=temperature,
+                )
+            finally:
+                # Restore original instruction strictly
+                if language != "auto":
+                     acestep.llm_inference.DEFAULT_LM_UNDERSTAND_INSTRUCTION = original_instruction
+
+            if not result.success:
+                raise RuntimeError(f"Understanding failed: {result.error}")
+            
+            # Format output text analysis
+            analysis = (
+                f"🎵 Analysis Result:\n"
+                f"----------------\n"
+                f"📝 Caption: {result.caption}\n"
+                f"⏱️ BPM: {result.bpm or 'N/A'}\n"
+                f"⏳ Duration: {result.duration or 'N/A'}s\n"
+                f"🎼 Key: {result.keyscale or 'N/A'}\n"
+                f"🗣️ Language: {result.language or 'N/A'}\n"
+                f"🎼 Time Signature: {result.timesignature or 'N/A'}\n\n"
+                f"📜 Lyrics:\n{result.lyrics}"
+            )
+
+            return (
+                analysis,
+                result.caption,
+                float(result.duration or 0.0),
+                str(result.bpm or ""),
+                result.keyscale,
+                result.lyrics,
+            )
+
         finally:
-             # Cleanup temp file
-             if temp_audio_path and os.path.exists(temp_audio_path):
-                 try:
-                     os.remove(temp_audio_path)
-                 except:
-                     pass
-
-        # 3. Understand music from codes
-        result = understand_music(
-            llm_handler=llm_handler,
-            audio_codes=input_codes,
-            temperature=0.85,
-        )
-
-        if not result.success:
-            raise RuntimeError(f"Understanding failed: {result.error}")
-
-        return (
-            result.caption,
-            result.lyrics,
-            result.bpm or 0,
-            result.duration or 0.0,
-            result.keyscale,
-            result.language,
-        )
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
 
 
