@@ -342,14 +342,14 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         if torch.cuda.is_available():
             torch.cuda.synchronize()
 
-        # Convert tensor to numpy (channels, samples) -> (samples, channels)
-        audio_np = audio_tensor.cpu().numpy().T
-
         # Prepare ComfyUI audio format
+        # audio_tensor is [channels, samples] from handler
+        # ComfyUI expects [batch, channels, samples], so just add batch dimension
         audio_output = {
-            "waveform": torch.from_numpy(audio_np).unsqueeze(0),  # Add batch dimension
+            "waveform": audio_tensor.cpu().unsqueeze(0),  # [channels, samples] -> [1, channels, samples]
             "sample_rate": sample_rate,
         }
+
 
         # Prepare metadata
         metadata = json.dumps(
@@ -471,14 +471,14 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
 
-            # Convert tensor to numpy
-            audio_np = audio_tensor.cpu().numpy().T
-
             # Prepare ComfyUI audio format
+            # audio_tensor is [channels, samples] from handler
+            # ComfyUI expects [batch, channels, samples], so just add batch dimension
             audio_output = {
-                "waveform": torch.from_numpy(audio_np).unsqueeze(0),
+                "waveform": audio_tensor.cpu().unsqueeze(0),  # [channels, samples] -> [1, channels, samples]
                 "sample_rate": sample_rate,
             }
+
 
             # Prepare metadata
             metadata = json.dumps(
@@ -602,14 +602,14 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
 
-            # Convert tensor to numpy
-            audio_np = audio_tensor.cpu().numpy().T
-
             # Prepare ComfyUI audio format
+            # audio_tensor is [channels, samples] from handler
+            # ComfyUI expects [batch, channels, samples], so just add batch dimension
             audio_output = {
-                "waveform": torch.from_numpy(audio_np).unsqueeze(0),
+                "waveform": audio_tensor.cpu().unsqueeze(0),  # [channels, samples] -> [1, channels, samples]
                 "sample_rate": sample_rate,
             }
+
 
             # Prepare metadata
             metadata = json.dumps(
@@ -741,10 +741,13 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         audio_np = audio_tensor.cpu().numpy().T
 
         # Prepare ComfyUI audio format
+        # audio_tensor is [channels, samples] from handler
+        # ComfyUI expects [batch, channels, samples], so just add batch dimension
         audio_output = {
-            "waveform": torch.from_numpy(audio_np).unsqueeze(0),
+            "waveform": audio_tensor.cpu().unsqueeze(0),  # [channels, samples] -> [1, channels, samples]
             "sample_rate": sample_rate,
         }
+
 
         # Prepare metadata
         metadata = json.dumps(
