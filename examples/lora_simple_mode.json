@@ -1,0 +1,200 @@
+{
+    "last_node_id": 4,
+    "last_link_id": 5,
+    "nodes": [
+        {
+            "id": 4,
+            "type": "ACE_STEP_LoRALoader",
+            "pos": [
+                50,
+                -100
+            ],
+            "size": {
+                "0": 315,
+                "1": 58
+            },
+            "flags": {},
+            "order": 0,
+            "mode": 0,
+            "outputs": [
+                {
+                    "name": "lora_info",
+                    "type": "ACE_STEP_LORA_INFO",
+                    "links": [
+                        5
+                    ],
+                    "shape": 3,
+                    "slot_index": 0
+                }
+            ],
+            "properties": {
+                "Node name for S&R": "ACE_STEP_LoRALoader"
+            },
+            "widgets_values": [
+                "None",
+                1.0
+            ]
+        },
+        {
+            "id": 1,
+            "type": "ACE_STEP_SimpleMode",
+            "pos": [
+                50,
+                100
+            ],
+            "size": {
+                "0": 400,
+                "1": 600
+            },
+            "flags": {},
+            "order": 1,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "lora_info",
+                    "type": "ACE_STEP_LORA_INFO",
+                    "link": 5
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "audio",
+                    "type": "AUDIO",
+                    "links": [
+                        1
+                    ],
+                    "shape": 3,
+                    "slot_index": 0
+                },
+                {
+                    "name": "audio_path",
+                    "type": "STRING",
+                    "links": [
+                        2
+                    ],
+                    "shape": 3,
+                    "slot_index": 1
+                },
+                {
+                    "name": "metadata",
+                    "type": "STRING",
+                    "links": [
+                        3
+                    ],
+                    "shape": 3,
+                    "slot_index": 2
+                },
+                {
+                    "name": "sample_info",
+                    "type": "STRING",
+                    "links": [
+                        4
+                    ],
+                    "shape": 3,
+                    "slot_index": 3
+                }
+            ],
+            "properties": {
+                "Node name for S&R": "ACE_STEP_SimpleMode"
+            },
+            "widgets_values": [
+                "energetic K-pop dance track with catchy hooks and synth leads",
+                "",
+                "acestep-5Hz-lm-1.7B",
+                "acestep-v15-turbo",
+                2,
+                -1,
+                "fixed",
+                8,
+                "auto",
+                false,
+                "auto",
+                true,
+                "flac"
+            ]
+        },
+        {
+            "id": 2,
+            "type": "SaveAudio",
+            "pos": [
+                500,
+                100
+            ],
+            "size": {
+                "0": 315,
+                "1": 130
+            },
+            "flags": {},
+            "order": 2,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "audio",
+                    "type": "AUDIO",
+                    "link": 1
+                }
+            ],
+            "properties": {
+                "Node name for S&R": "SaveAudio"
+            },
+            "widgets_values": [
+                "output/acestep"
+            ]
+        },
+        {
+            "id": 3,
+            "type": "PreviewAny",
+            "pos": [
+                500,
+                270
+            ],
+            "size": {
+                "0": 400,
+                "1": 200
+            },
+            "flags": {},
+            "order": 3,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "source",
+                    "type": "*",
+                    "link": 3
+                }
+            ],
+            "properties": {
+                "Node name for S&R": "PreviewAny"
+            }
+        }
+    ],
+    "links": [
+        [
+            1,
+            1,
+            0,
+            2,
+            0,
+            "AUDIO"
+        ],
+        [
+            3,
+            1,
+            2,
+            3,
+            0,
+            "STRING"
+        ],
+        [
+            5,
+            4,
+            0,
+            1,
+            0,
+            "ACE_STEP_LORA_INFO"
+        ]
+    ],
+    "groups": [],
+    "config": {},
+    "extra": {},
+    "version": 0.4
+}
