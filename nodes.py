@@ -194,6 +194,16 @@ def get_acestep_models():
             models.append(d)
     return sorted(list(set(models)))
 
+def get_acestep_checkpoints():
+    if not ACESTEP_AVAILABLE:
+        return [""]
+    paths = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)
+    if not paths:
+        # Fallback to default path if not found
+        default_path = os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)
+        return [default_path]
+    return paths
+
 def get_available_peft_loras():
     lora_paths = []
     # Search paths: 
@@ -375,30 +385,29 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "caption": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0}),
-                "batch_size": ("INT", {"default": 2, "min": 1, "max": 8}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
-                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Text prompt or natural language description for music generation."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
+                "duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0, "tooltip": "Target duration of the generated music in seconds."}),
+                "batch_size": ("INT", {"default": 2, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
+                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "lyrics": ("STRING", {"default": "", "multiline": True}),
-                "bpm": ("INT", {"default": 0, "min": 0, "max": 300}),
-                "keyscale": ("STRING", {"default": ""}),
-                "timesignature": ("STRING", {"default": ""}),
-                "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown"}),
-                "instrumental": ("BOOLEAN", {"default": False}),
-                "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0}),
-                "shift": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 5.0}),
-                "thinking": ("BOOLEAN", {"default": True}),
-                "lm_temperature": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 2.0}),
-                "lm_temperature": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 2.0}),
-                "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
-                "lora_info": ("ACE_STEP_LORA_INFO",),
+                "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics. Leave empty for automatic generation by the language model."}),
+                "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Beats per minute. 0 for automatic detection."}),
+                "keyscale": ("STRING", {"default": "", "tooltip": "Musical key and scale (e.g., C Major)."}),
+                "timesignature": ("STRING", {"default": "", "tooltip": "Musical time signature (e.g., 4/4)."}),
+                "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
+                "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
+                "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "Strength of prompt following."}),
+                "shift": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 5.0, "tooltip": "Sequence length scaling factor, default is 1.0."}),
+                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
+                "lm_temperature": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "tooltip": "Sampling temperature for the language model. 0.0 is most stable (recommended)."}),
+                "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
+                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
             },
         }
 
@@ -428,7 +437,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         guidance_scale: float = 7.0,
         shift: float = 1.0,
         thinking: bool = True,
-        lm_temperature: float = 0.85,
+        lm_temperature: float = 0.0,
         audio_format: str = "flac",
         lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str]:
@@ -517,23 +526,22 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "src_audio": ("AUDIO",),
-                "caption": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "audio_cover_strength": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0}),
-                "batch_size": ("INT", {"default": 1, "min": 1, "max": 8}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
-                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "src_audio": ("AUDIO", {"tooltip": "The original audio signal to be covered."}),
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Description of the style for the cover version."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for processing metadata."}),
+                "audio_cover_strength": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "tooltip": "Strength of preserving the original audio structure. 1.0 means full preservation, 0.0 means complete reconstruction."}),
+                "batch_size": ("INT", {"default": 1, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
+                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "lyrics": ("STRING", {"default": "", "multiline": True}),
-                "thinking": ("BOOLEAN", {"default": True}),
-                "thinking": ("BOOLEAN", {"default": True}),
-                "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
-                "lora_info": ("ACE_STEP_LORA_INFO",),
+                "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics. Leave empty to attempt extraction from original or keep consistency."}),
+                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
+                "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
+                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
             },
         }
 
@@ -652,22 +660,21 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "src_audio": ("AUDIO",),
-                "caption": ("STRING", {"default": "", "multiline": True}),
-                "repainting_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 600.0}),
-                "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0}),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
-                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "src_audio": ("AUDIO", {"tooltip": "The original audio signal to be repainted."}),
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Style description prompt for the repainted region."}),
+                "repainting_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 600.0, "tooltip": "Start time for the repainting region in seconds."}),
+                "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0, "tooltip": "End time for the repainting region in seconds. -1 means until the end of the audio."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for processing metadata."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
+                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "thinking": ("BOOLEAN", {"default": True}),
-                "thinking": ("BOOLEAN", {"default": True}),
-                "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
-                "lora_info": ("ACE_STEP_LORA_INFO",),
+                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
+                "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
+                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
             },
         }
 
@@ -786,22 +793,21 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "query": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
-                "batch_size": ("INT", {"default": 2, "min": 1, "max": 8}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
-                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "query": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language description or prompt for music generation."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
+                "batch_size": ("INT", {"default": 2, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
+                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "instrumental": ("BOOLEAN", {"default": False}),
-                "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto"}),
-                "thinking": ("BOOLEAN", {"default": True}),
-                "thinking": ("BOOLEAN", {"default": True}),
-                "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
-                "lora_info": ("ACE_STEP_LORA_INFO",),
+                "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
+                "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
+                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
+                "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
+                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
             },
         }
 
@@ -845,7 +851,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             query=query,
             instrumental=instrumental,
             vocal_language=None if vocal_language == "auto" else vocal_language,
-            temperature=0.85,
+            temperature=0.0,
         )
 
         if not sample_result.success:
@@ -934,14 +940,14 @@ class ACE_STEP_FORMAT_SAMPLE(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "caption": ("STRING", {"default": "", "multiline": True}),
-                "lyrics": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language description or prompt for music generation."}),
+                "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics to be formatted."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for formatting and enhancement."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "user_metadata": ("STRING", {"default": "{}"}),
+                "user_metadata": ("STRING", {"default": "{}", "tooltip": "Custom metadata in JSON format."}),
             },
         }
 
@@ -1009,15 +1015,18 @@ class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "query": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "query": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language query describing the music you want to generate."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "instrumental": ("BOOLEAN", {"default": False}),
-                "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto"}),
-                "temperature": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 2.0}),
+                "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
+                "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
+                "top_k": ("INT", {"default": 50, "min": 0, "max": 1000, "tooltip": "Top-K filtering parameter for sampling."}),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "tooltip": "Top-P (nucleus sampling) filtering parameter."}),
+                "temperature": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "tooltip": "Sampling temperature for the language model. 0.0 is most stable (recommended)."}),
             },
         }
 
@@ -1034,7 +1043,10 @@ class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
         device: str,
         instrumental: bool = False,
         vocal_language: str = "auto",
-        temperature: float = 0.85,
+        seed: int = -1,
+        top_k: int = 50,
+        top_p: float = 0.95,
+        temperature: float = 0.0,
     ) -> Tuple[str, str, float, int, str, str]:
         # Initialize handlers
         dit_handler, llm_handler = self.initialize_handlers(
@@ -1050,6 +1062,9 @@ class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
             query=query,
             instrumental=instrumental,
             vocal_language=None if vocal_language == "auto" else vocal_language,
+            seed=seed,
+            top_k=top_k,
+            top_p=top_p,
             temperature=temperature,
         )
 
@@ -1073,17 +1088,17 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "audio": ("AUDIO",),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
-                "target_duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "audio": ("AUDIO", {"tooltip": "The audio signal to be analyzed."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for audio analysis and understanding."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
+                "target_duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0, "tooltip": "Target duration to reference during analysis."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "language": (["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt", "nl", "tr", "pl", "ar", "vi", "th"], {"default": "auto"}),
-                "temperature": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0}),
-                "thinking": ("BOOLEAN", {"default": True}),
+                "language": (["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt", "nl", "tr", "pl", "ar", "vi", "th"], {"default": "auto", "tooltip": "Hint the model about the vocal language in the audio."}),
+                "temperature": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0, "tooltip": "Sampling temperature for the understanding task. Lower values are more precise."}),
+                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
             },
         }
 
@@ -1196,8 +1211,8 @@ class ACE_STEP_LORA_LOADER:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "lora_path": (get_available_peft_loras(), {"default": "None"}),
-                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 5.0, "step": 0.1}),
+                "lora_path": (get_available_peft_loras(), {"default": "None", "tooltip": "Select the LoRA model to load."}),
+                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 5.0, "step": 0.1, "tooltip": "Strength of the LoRA effect."}),
             }
         }
 
