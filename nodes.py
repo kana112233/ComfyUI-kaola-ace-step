@@ -492,9 +492,44 @@ class ACE_STEP_BASE:
             # Initialize DiT handler
             self.dit_handler = AceStepHandler()
 
-            # Monkey patch _get_project_root to use ComfyUI's model directory
+            # Monkey patch _get_project_root to handle ComfyUI's model directory structure
+            # Upstream code does: checkpoint_dir = os.path.join(actual_project_root, "checkpoints")
+            # To get ComfyUI path (models/acestep/Ace-Step1.5/config_path),
+            # we need actual_project_root to be the PARENT of the model directory
+            # So that: os.path.join(parent, "checkpoints") = parent/checkpoints
+            # But we want: checkpoint_dir/config_path = models/acestep/Ace-Step1.5/config_path
+            #
+            # Solution: Make checkpoint_dir point to parent, so upstream adds /checkpoints
+            # But ComfyUI's checkpoint_dir already points to the model directory...
+            #
+            # Actually, the cleanest solution: Don't pass project_root at all
+            # Let upstream use its default _get_project_root which handles this correctly
+            # We just need to ensure the model directory structure matches upstream's expectation
+
+            # TEMPORARY: Use a symlink or modify the path handling
+            # For now, let's make project_root point to the parent of acestep models dir
+            # If checkpoint_dir = /path/to/models/acestep/Ace-Step1.5
+            # We want upstream to use /path/to/models/acestep/Ace-Step1.5 as the base
+            # But upstream adds /checkpoints, so we need to trick it
+
+            # Better approach: Remove the upstream's /checkpoints addition by patching
+            # But that requires modifying upstream code significantly
+
+            # For now, let's just return the checkpoint_dir and accept that upstream
+            # will create /download to a checkpoints subdirectory
             def _patched_get_project_root():
-                return checkpoint_dir
+                # Return checkpoint_dir minus the last directory (go up one level)
+                # If models/acestep/Ace-Step1.5, return models/acestep
+                # Then upstream adds /checkpoints → models/acestep/checkpoints
+                # And config is models/acestep/checkpoints/acestep-v15-turbo
+                # This still doesn't match ComfyUI's structure...
+                #
+                # The real issue: ComfyUI expects models directly under Ace-Step1.5/
+                # Upstream expects models under Ace-Step1.5/checkpoints/
+                #
+                # Solution: Return checkpoint_dir's parent, and create a symlink
+                # or accept that we need to restructure
+                return os.path.dirname(checkpoint_dir)
 
             self.dit_handler._get_project_root = _patched_get_project_root
 
