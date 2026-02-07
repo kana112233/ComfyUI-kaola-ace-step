@@ -729,6 +729,10 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             guidance_scale=guidance_scale,
             shift=shift,
             thinking=thinking,
+            # Disable all CoT features when thinking=False (required for LoRA compatibility)
+            use_cot_caption=thinking,
+            use_cot_language=thinking,
+            use_cot_metas=thinking,
             lm_temperature=lm_temperature,
             lm_top_k=0,  # These might be filtered out if not in upstream
             lm_top_p=1.0,
@@ -862,7 +866,12 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 inference_steps=inference_steps,
                 seed=seed,
                 thinking=thinking,
+                # Disable all CoT features when thinking=False (required for LoRA compatibility)
+                use_cot_caption=thinking,
+                use_cot_language=thinking,
+                use_cot_metas=thinking,
             )
+
 
             # Prepare generation config
             config = GenerationConfig(
@@ -994,7 +1003,12 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 inference_steps=inference_steps,
                 seed=seed,
                 thinking=thinking,
+                # Disable all CoT features when thinking=False (required for LoRA compatibility)
+                use_cot_caption=thinking,
+                use_cot_language=thinking,
+                use_cot_metas=thinking,
             )
+
 
             # Prepare generation config
             config = GenerationConfig(
@@ -1131,6 +1145,10 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             inference_steps=inference_steps,
             seed=seed,
             thinking=thinking,
+            # Disable all CoT features when thinking=False (required for LoRA compatibility)
+            use_cot_caption=thinking,
+            use_cot_language=thinking,
+            use_cot_metas=thinking,
         )
 
         # Prepare generation config
