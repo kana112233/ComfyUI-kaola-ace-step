@@ -211,7 +211,9 @@ def get_available_peft_loras():
         for root, dirs, files in os.walk(search_path):
             if "adapter_config.json" in files:
                 # Found a LoRA directory
-                lora_paths.append(root)
+                # Use path relative to models_dir for cleaner display
+                rel_path = os.path.relpath(root, folder_paths.models_dir)
+                lora_paths.append(rel_path)
     
     if not lora_paths:
         return ["None"]
@@ -1000,6 +1002,70 @@ class ACE_STEP_FORMAT_SAMPLE(ACE_STEP_BASE):
         return result.caption, result.lyrics, formatted_metadata
 
 
+class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
+    """Generate music description and lyrics from natural language query"""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "query": ("STRING", {"default": "", "multiline": True}),
+                "checkpoint_dir": ("STRING", {"default": ""}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+            },
+            "optional": {
+                "instrumental": ("BOOLEAN", {"default": False}),
+                "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto"}),
+                "temperature": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 2.0}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING", "STRING", "FLOAT", "INT", "STRING", "STRING")
+    RETURN_NAMES = ("caption", "lyrics", "duration", "bpm", "keyscale", "vocal_language")
+    FUNCTION = "generate_sample"
+    CATEGORY = "Audio/ACE-Step"
+
+    def generate_sample(
+        self,
+        query: str,
+        checkpoint_dir: str,
+        lm_model_path: str,
+        device: str,
+        instrumental: bool = False,
+        vocal_language: str = "auto",
+        temperature: float = 0.85,
+    ) -> Tuple[str, str, float, int, str, str]:
+        # Initialize handlers
+        dit_handler, llm_handler = self.initialize_handlers(
+            checkpoint_dir=checkpoint_dir,
+            config_path="acestep-v15-turbo",  # Dummy
+            lm_model_path=lm_model_path,
+            device=device,
+        )
+
+        # Create sample
+        result = create_sample(
+            llm_handler=llm_handler,
+            query=query,
+            instrumental=instrumental,
+            vocal_language=None if vocal_language == "auto" else vocal_language,
+            temperature=temperature,
+        )
+
+        if not result.success:
+            raise RuntimeError(f"Sample creation failed: {result.error}")
+
+        return (
+            result.caption,
+            result.lyrics,
+            float(result.duration or 30.0),
+            int(result.bpm or 120),
+            result.keyscale or "",
+            result.language or "unknown",
+        )
+
+
 class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
     """Understand and analyze audio"""
 
@@ -1144,8 +1210,18 @@ class ACE_STEP_LORA_LOADER:
         if lora_path == "None" or not lora_path:
             return (None,)
             
+        # Resolve relative path back to absolute
+        abs_path = os.path.join(folder_paths.models_dir, lora_path)
+        if not os.path.exists(abs_path):
+             # Fallback: maybe it's already absolute (e.g. from old workflow)
+             if os.path.exists(lora_path):
+                 abs_path = lora_path
+             else:
+                 print(f"[ACE_STEP_LoRALoader] LoRA path not found: {lora_path}")
+                 return (None,)
+
         return ({
-            "path": lora_path,
+            "path": abs_path,
             "scale": strength
         },)
 
@@ -1157,6 +1233,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_STEP_Repaint": ACE_STEP_REPAINT,
     "ACE_STEP_SimpleMode": ACE_STEP_SIMPLE_MODE,
     "ACE_STEP_FormatSample": ACE_STEP_FORMAT_SAMPLE,
+    "ACE_STEP_CreateSample": ACE_STEP_CREATE_SAMPLE,
     "ACE_STEP_Understand": ACE_STEP_UNDERSTAND,
     "ACE_STEP_LoRALoader": ACE_STEP_LORA_LOADER,
 }
@@ -1167,6 +1244,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_Repaint": "ACE-Step Repaint",
     "ACE_STEP_SimpleMode": "ACE-Step Simple Mode",
     "ACE_STEP_FormatSample": "ACE-Step Format Sample",
+    "ACE_STEP_CreateSample": "ACE-Step Create Sample",
     "ACE_STEP_Understand": "ACE-Step Understand",
     "ACE_STEP_LoRALoader": "ACE-Step LoRA Loader",
 }
