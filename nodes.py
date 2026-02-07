@@ -584,6 +584,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
+                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Text prompt or natural language description for music generation."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
@@ -599,7 +600,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Beats per minute. 0 for automatic detection."}),
                 "keyscale": ("STRING", {"default": "", "tooltip": "Musical key and scale (e.g., C Major)."}),
                 "timesignature": ("STRING", {"default": "", "tooltip": "Musical time signature (e.g., 4/4)."}),
-                "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
+                "vocal_language": ("STRING", {"default": "unknown", "tooltip": "Vocal language (e.g., zh, en, ja, auto, unknown). Accepts string input from CreateSample node."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "Strength of prompt following."}),
                 "shift": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 5.0, "tooltip": "Sequence length scaling factor, default is 1.0."}),
@@ -1299,7 +1300,6 @@ class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
             "optional": {
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
                 "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
                 "top_k": ("INT", {"default": 50, "min": 0, "max": 1000, "tooltip": "Top-K filtering parameter for sampling."}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "tooltip": "Top-P (nucleus sampling) filtering parameter."}),
                 "temperature": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "tooltip": "Sampling temperature for the language model. 0.0 is most stable (recommended)."}),
@@ -1319,7 +1319,6 @@ class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
         device: str,
         instrumental: bool = False,
         vocal_language: str = "auto",
-        seed: int = -1,
         top_k: int = 50,
         top_p: float = 0.95,
         temperature: float = 0.0,
