@@ -50,7 +50,7 @@
       },
       "widgets_values": [
         "epic cinematic trailer music with orchestral hits",
-        "",
+        "Ace-Step1.5",
         "acestep-v15-turbo",
         "acestep-5Hz-lm-1.7B",
         30.0,
@@ -63,12 +63,14 @@
         0,
         "",
         "",
-        "unknown",
+        "auto",
         false,
         7.0,
         1.0,
         true,
         0.85,
+        "None",
+        false,
         "flac"
       ]
     },
