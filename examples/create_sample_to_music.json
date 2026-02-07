@@ -1,8 +1,8 @@
 {
     "id": "60778de6-33ea-430d-b828-ac4d790f4690",
     "revision": 0,
-    "last_node_id": 4,
-    "last_link_id": 10,
+    "last_node_id": 5,
+    "last_link_id": 11,
     "nodes": [
         {
             "id": 2,
@@ -79,10 +79,95 @@
             ]
         },
         {
+            "id": 4,
+            "type": "ACE_STEP_CreateSample",
+            "pos": [
+                -83.32000332757114,
+                185.8725979140812
+            ],
+            "size": [
+                400,
+                428
+            ],
+            "flags": {},
+            "order": 0,
+            "mode": 0,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "caption",
+                    "type": "STRING",
+                    "slot_index": 0,
+                    "links": [
+                        10
+                    ]
+                },
+                {
+                    "name": "lyrics",
+                    "type": "STRING",
+                    "slot_index": 1,
+                    "links": [
+                        5
+                    ]
+                },
+                {
+                    "name": "duration",
+                    "type": "FLOAT",
+                    "slot_index": 2,
+                    "links": [
+                        6
+                    ]
+                },
+                {
+                    "name": "bpm",
+                    "type": "INT",
+                    "slot_index": 3,
+                    "links": [
+                        7
+                    ]
+                },
+                {
+                    "name": "keyscale",
+                    "type": "STRING",
+                    "slot_index": 4,
+                    "links": [
+                        8
+                    ]
+                },
+                {
+                    "name": "vocal_language",
+                    "type": "STRING",
+                    "slot_index": 5,
+                    "links": []
+                }
+            ],
+            "properties": {
+                "aux_id": "kana112233/ComfyUI-kaola-ace-step",
+                "ver": "d91f43cf9166f74cdec9b8c7ab0dda14eabf4147",
+                "Node name for S&R": "ACE_STEP_CreateSample",
+                "ue_properties": {
+                    "widget_ue_connectable": {},
+                    "version": "7.5.2",
+                    "input_ue_unconnectable": {}
+                }
+            },
+            "widgets_values": [
+                "a cheerful upbeat jazz track with a swinging rhythm and a lively piano solo",
+                "Ace-Step1.5",
+                "acestep-5Hz-lm-1.7B",
+                "auto",
+                false,
+                "auto",
+                50,
+                0.9,
+                0
+            ]
+        },
+        {
             "id": 1,
             "type": "ACE_STEP_TextToMusic",
             "pos": [
-                538.896917918434,
+                469.8572259250157,
                 39.72314897055626
             ],
             "size": [
@@ -211,93 +296,6 @@
                 "flac",
                 "flac"
             ]
-        },
-        {
-            "id": 4,
-            "type": "ACE_STEP_CreateSample",
-            "pos": [
-                -83.32000332757114,
-                185.8725979140812
-            ],
-            "size": [
-                400,
-                428
-            ],
-            "flags": {},
-            "order": 0,
-            "mode": 0,
-            "inputs": [],
-            "outputs": [
-                {
-                    "name": "caption",
-                    "type": "STRING",
-                    "slot_index": 0,
-                    "links": [
-                        10
-                    ]
-                },
-                {
-                    "name": "lyrics",
-                    "type": "STRING",
-                    "slot_index": 1,
-                    "links": [
-                        5
-                    ]
-                },
-                {
-                    "name": "duration",
-                    "type": "FLOAT",
-                    "slot_index": 2,
-                    "links": [
-                        6
-                    ]
-                },
-                {
-                    "name": "bpm",
-                    "type": "INT",
-                    "slot_index": 3,
-                    "links": [
-                        7
-                    ]
-                },
-                {
-                    "name": "keyscale",
-                    "type": "STRING",
-                    "slot_index": 4,
-                    "links": [
-                        8
-                    ]
-                },
-                {
-                    "name": "vocal_language",
-                    "type": "STRING",
-                    "slot_index": 5,
-                    "links": []
-                }
-            ],
-            "properties": {
-                "aux_id": "kana112233/ComfyUI-kaola-ace-step",
-                "ver": "d91f43cf9166f74cdec9b8c7ab0dda14eabf4147",
-                "Node name for S&R": "ACE_STEP_CreateSample",
-                "ue_properties": {
-                    "widget_ue_connectable": {},
-                    "version": "7.5.2",
-                    "input_ue_unconnectable": {}
-                }
-            },
-            "widgets_values": [
-                "a cheerful upbeat jazz track with a swinging rhythm and a lively piano solo",
-                "Ace-Step1.5",
-                "acestep-5Hz-lm-1.7B",
-                "auto",
-                false,
-                "auto",
-                -1,
-                "fixed",
-                50,
-                0.95,
-                0
-            ]
         }
     ],
     "links": [
@@ -365,10 +363,10 @@
         "ue_links": [],
         "links_added_by_ue": [],
         "ds": {
-            "scale": 1.283902517749502,
+            "scale": 1.1671841070450026,
             "offset": [
-                -22.443772560690377,
-                76.84072065856809
+                192.54677221914082,
+                99.65646112037032
             ]
         },
         "frontendVersion": "1.38.13",

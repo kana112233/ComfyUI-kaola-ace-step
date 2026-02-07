@@ -1,117 +1,313 @@
 {
+  "id": "84cdb3fe-75a8-4d56-80bb-b96a08fe88ee",
+  "revision": 0,
   "last_node_id": 5,
   "last_link_id": 7,
   "nodes": [
     {
+      "id": 3,
+      "type": "SaveAudio",
+      "pos": [
+        850,
+        100
+      ],
+      "size": [
+        315,
+        130
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 3
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.12.3",
+        "Node name for S&R": "SaveAudio",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.5.2",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "output/acestep_cover"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "PreviewAny",
+      "pos": [
+        850,
+        270
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 7
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.12.3",
+        "Node name for S&R": "PreviewAny",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.5.2",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
       "id": 5,
       "type": "ACE_STEP_LoRALoader",
-      "pos": [50, -100],
-      "size": {"0": 315, "1": 58},
+      "pos": [
+        50,
+        -100
+      ],
+      "size": [
+        315,
+        82
+      ],
       "flags": {},
       "order": 0,
       "mode": 0,
+      "inputs": [],
       "outputs": [
-        {"name": "lora_info", "type": "ACE_STEP_LORA_INFO", "links": [6], "shape": 3, "slot_index": 0}
+        {
+          "name": "lora_info",
+          "type": "ACE_STEP_LORA_INFO",
+          "slot_index": 0,
+          "links": [
+            6
+          ]
+        }
       ],
-      "properties": {"Node name for S&R": "ACE_STEP_LoRALoader"},
-      "widgets_values": ["None", 1.0]
-    },
-    {
-      "id": 1,
-      "type": "LoadAudio",
-      "pos": [50, 100],
-      "size": {"0": 315, "1": 130},
-      "flags": {},
-      "order": 1,
-      "mode": 0,
-      "outputs": [
-        {"name": "audio", "type": "AUDIO", "links": [1], "shape": 3, "slot_index": 0},
-        {"name": "audio_path", "type": "STRING", "links": [2], "shape": 3, "slot_index": 1}
-      ],
-      "properties": {"Node name for S&R": "LoadAudio"},
-      "widgets_values": ["input/original_song.mp3"]
+      "properties": {
+        "aux_id": "kana112233/ComfyUI-kaola-ace-step",
+        "ver": "9c689aa7dd9d700d0955c8a4ea7bc7fabef27e4f",
+        "Node name for S&R": "ACE_STEP_LoRALoader",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.5.2",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "loras/ACE-Step-v1.5-chinese-new-year-LoRA",
+        1
+      ]
     },
     {
       "id": 2,
       "type": "ACE_STEP_Cover",
-      "pos": [400, 100],
-      "size": {"0": 400, "1": 650},
+      "pos": [
+        400,
+        100
+      ],
+      "size": [
+        400,
+        668
+      ],
       "flags": {},
       "order": 2,
       "mode": 0,
       "inputs": [
-        {"name": "src_audio", "type": "AUDIO", "link": 1},
-        {"name": "lora_info", "type": "ACE_STEP_LORA_INFO", "link": 6}
+        {
+          "name": "src_audio",
+          "type": "AUDIO",
+          "link": 1
+        },
+        {
+          "name": "lora_info",
+          "shape": 7,
+          "type": "ACE_STEP_LORA_INFO",
+          "link": 6
+        }
       ],
       "outputs": [
-        {"name": "audio", "type": "AUDIO", "links": [3], "shape": 3, "slot_index": 0},
-        {"name": "audio_path", "type": "STRING", "links": [4], "shape": 3, "slot_index": 1},
-        {"name": "metadata", "type": "STRING", "links": [7], "shape": 3, "slot_index": 2}
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "slot_index": 0,
+          "links": [
+            3
+          ]
+        },
+        {
+          "name": "audio_path",
+          "type": "STRING",
+          "slot_index": 1,
+          "links": [
+            4
+          ]
+        },
+        {
+          "name": "metadata",
+          "type": "STRING",
+          "slot_index": 2,
+          "links": [
+            7
+          ]
+        }
       ],
-      "properties": {"Node name for S&R": "ACE_STEP_Cover"},
+      "properties": {
+        "aux_id": "kana112233/ComfyUI-kaola-ace-step",
+        "ver": "9c689aa7dd9d700d0955c8a4ea7bc7fabef27e4f",
+        "Node name for S&R": "ACE_STEP_Cover",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.5.2",
+          "input_ue_unconnectable": {}
+        }
+      },
       "widgets_values": [
         "jazz piano arrangement with swing feel",
-        "",
         "Ace-Step1.5",
         "acestep-v15-turbo",
         "acestep-5Hz-lm-1.7B",
         0.5,
         1,
-        42,
+        1,
         "fixed",
         8,
-        7.0,
+        7,
         "auto",
         "",
-        "unknown",
+        "auto",
+        false,
         false,
         0,
         "",
-        "",
         false,
-        true,
+        false,
         "flac",
-        "None",
-        1.0,
         ""
       ]
     },
     {
-      "id": 3,
-      "type": "SaveAudio",
-      "pos": [850, 100],
-      "size": {"0": 315, "1": 130},
-      "flags": {},
-      "order": 3,
-      "mode": 0,
-      "inputs": [
-        {"name": "audio", "type": "AUDIO", "link": 3}
+      "id": 1,
+      "type": "LoadAudio",
+      "pos": [
+        -39.04377818359338,
+        98.71507720076055
       ],
-      "properties": {"Node name for S&R": "SaveAudio"},
-      "widgets_values": ["output/acestep_cover"]
-    },
-    {
-      "id": 4,
-      "type": "PreviewAny",
-      "pos": [850, 270],
-      "size": {"0": 400, "1": 200},
-      "flags": {},
-      "order": 4,
-      "mode": 0,
-      "inputs": [
-        {"name": "source", "type": "*", "link": 7}
+      "size": [
+        315,
+        156
       ],
-      "properties": {"Node name for S&R": "PreviewAny"}
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "slot_index": 0,
+          "links": [
+            1
+          ]
+        },
+        {
+          "name": "audio_path",
+          "shape": 3,
+          "type": "STRING",
+          "slot_index": 1,
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.12.3",
+        "Node name for S&R": "LoadAudio",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.5.2",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "好运来.mp3",
+        null,
+        null
+      ]
     }
   ],
   "links": [
-    [1, 1, 0, 2, 0, "AUDIO"],
-    [3, 2, 0, 3, 0, "AUDIO"],
-    [7, 2, 2, 4, 0, "STRING"],
-    [6, 5, 0, 2, 1, "ACE_STEP_LORA_INFO"]
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "AUDIO"
+    ],
+    [
+      3,
+      2,
+      0,
+      3,
+      0,
+      "AUDIO"
+    ],
+    [
+      7,
+      2,
+      2,
+      4,
+      0,
+      "STRING"
+    ],
+    [
+      6,
+      5,
+      0,
+      2,
+      1,
+      "ACE_STEP_LORA_INFO"
+    ]
   ],
   "groups": [],
   "config": {},
-  "extra": {},
+  "extra": {
+    "workflowRendererVersion": "LG",
+    "ue_links": [],
+    "ds": {
+      "scale": 1.0391519976991985,
+      "offset": [
+        172.18252555462973,
+        219.48023536306263
+      ]
+    },
+    "links_added_by_ue": [],
+    "frontendVersion": "1.38.13",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
   "version": 0.4
 }
