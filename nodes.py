@@ -1397,7 +1397,10 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
             },
             "optional": {
                 "language": (["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt", "nl", "tr", "pl", "ar", "vi", "th"], {"default": "auto", "tooltip": "Hint the model about the vocal language in the audio."}),
-                "temperature": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0, "tooltip": "Sampling temperature for the understanding task. Lower values are more precise."}),
+                "temperature": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature. Lower (0.0-0.3) = more precise/faithful, Higher (0.5+) = more creative. Try 0.1 for better accuracy."}),
+                "top_k": ("INT", {"default": 0, "min": 0, "max": 100, "tooltip": "Top-K sampling. 0 = disabled. Lower values (e.g., 20-50) can improve accuracy by limiting token choices."}),
+                "top_p": ("FLOAT", {"default": 0.9, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Top-P (nucleus) sampling. 1.0 = disabled. Lower values (e.g., 0.8-0.9) can improve accuracy."}),
+                "repetition_penalty": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1, "tooltip": "Repetition penalty. 1.0 = no penalty. Higher values (1.1-1.3) reduce repetitive lyrics."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
             },
         }
@@ -1418,6 +1421,9 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
         device: str,
         language: str = "auto",
         temperature: float = 0.3,
+        top_k: int = 0,
+        top_p: float = 0.9,
+        repetition_penalty: float = 1.0,
         thinking: bool = True,
     ) -> Tuple[str, str, float, str, str, str]:
         import tempfile
@@ -1461,11 +1467,14 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
                      print(f"[understand] Injected language hint: {lang_instruction}")
 
             try:
-                # Call understand_music
+                # Call understand_music with additional parameters for better accuracy
                 result = understand_music(
                     llm_handler=llm_handler,
                     audio_codes=input_codes,
                     temperature=temperature,
+                    top_k=top_k if top_k > 0 else None,
+                    top_p=top_p if top_p < 1.0 else None,
+                    repetition_penalty=repetition_penalty,
                 )
             finally:
                 # Restore original instruction strictly
