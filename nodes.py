@@ -1390,8 +1390,8 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
             "required": {
                 "audio": ("AUDIO", {"tooltip": "The audio signal to be analyzed."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for audio analysis and understanding."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for audio analysis and understanding."}),
                 "target_duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0, "tooltip": "Target duration to reference during analysis."}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
