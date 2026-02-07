@@ -319,16 +319,18 @@ def get_acestep_checkpoints():
     if not paths:
         # Fallback to default path if not found
         return [ACESTEP_MODEL_NAME]
-    # Return relative paths (just the model folder name)
-    # Store the mapping for later use when resolving the actual path
+    
     result = []
     for p in paths:
-        # Get the relative name (last component of the path)
-        name = os.path.basename(p.rstrip('/\\'))
-        if not name:  # If path ends with separator
-            name = os.path.basename(os.path.dirname(p))
-        result.append(name if name else ACESTEP_MODEL_NAME)
-    return list(set(result)) if result else [ACESTEP_MODEL_NAME]
+        if os.path.exists(p):
+            # Use basename for display
+            name = os.path.basename(p.rstrip('/\\'))
+            if not name:  # If path ends with separator
+                name = os.path.basename(os.path.dirname(p))
+            result.append(name if name else ACESTEP_MODEL_NAME)
+    
+    unique_results = sorted(list(set(result)))
+    return unique_results if unique_results else [ACESTEP_MODEL_NAME]
 
 # Cache for checkpoint path resolution
 _checkpoint_path_cache = {}
@@ -834,6 +836,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 inference_steps=inference_steps,
                 guidance_scale=guidance_scale,
                 use_adg=use_adg,
+                instruction=instruction if instruction else "",
                 seed=seed,
                 thinking=thinking,
                 # Disable all CoT features when thinking=False (required for LoRA compatibility)
