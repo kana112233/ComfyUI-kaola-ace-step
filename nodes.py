@@ -126,6 +126,8 @@ if ACESTEP_AVAILABLE:
         vocal_language = getattr(self, '_patch_vocal_language', None)
         instrumental = getattr(self, '_patch_instrumental', False)
         
+        print(f"[MONKEY PATCH DEBUG] build_formatted_prompt called: vocal_language={vocal_language}, instrumental={instrumental}")
+        
         # Check if is_negative_prompt is passed as pos arg or kwarg
         is_negative_prompt = kwargs.get('is_negative_prompt', False)
         if len(args) > 0: is_negative_prompt = args[0]
@@ -137,6 +139,8 @@ if ACESTEP_AVAILABLE:
             if vocal_language and vocal_language.strip() and vocal_language.strip().lower() != "unknown":
                 prompt += f"\nlanguage: {vocal_language.strip()}"
             prompt += f"\n\n# Lyric\n{lyrics}\n"
+            
+            print(f"[MONKEY PATCH DEBUG] Built prompt with instrumental={instrumental_str}, language={vocal_language}")
             
             return self.llm_tokenizer.apply_chat_template(
                 [
@@ -186,6 +190,7 @@ if ACESTEP_AVAILABLE:
         if llm_handler is not None:
             llm_handler._patch_vocal_language = params.vocal_language
             llm_handler._patch_instrumental = params.instrumental
+            print(f"[MONKEY PATCH DEBUG] generate_music: setting _patch_vocal_language={params.vocal_language}, _patch_instrumental={params.instrumental}")
             
         # Fix: Seed handling in upstream is sensitive to int vs list
         if config and hasattr(config, 'seeds'):
