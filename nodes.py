@@ -193,6 +193,19 @@ if ACESTEP_AVAILABLE:
             llm_handler._patch_vocal_language = params.vocal_language
             llm_handler._patch_instrumental = params.instrumental
             print(f"[MONKEY PATCH DEBUG] generate_music: setting _patch_vocal_language={params.vocal_language}, _patch_instrumental={params.instrumental}")
+        
+        # When CoT is disabled, manually add instrumental and language to caption
+        # because the LLM won't do it for us
+        use_cot = getattr(params, 'use_cot_caption', True) or getattr(params, 'thinking', True)
+        if not use_cot:
+            # Add instrumental and language info to caption for DiT
+            instrumental_str = "true" if params.instrumental else "false"
+            language_str = params.vocal_language if params.vocal_language else "unknown"
+            
+            # Append to caption
+            caption_suffix = f"\n\ninstrumental: {instrumental_str}\nlanguage: {language_str}"
+            params.caption = params.caption + caption_suffix
+            print(f"[MONKEY PATCH DEBUG] CoT disabled - appended to caption: instrumental={instrumental_str}, language={language_str}")
             
         # Fix: Seed handling in upstream is sensitive to int vs list
         if config and hasattr(config, 'seeds'):
@@ -208,6 +221,7 @@ if ACESTEP_AVAILABLE:
             llm_handler._patch_top_p = lm_top_p
 
         return _original_generate_music(dit_handler, llm_handler, params, config, **kwargs)
+
     
     acestep.inference.generate_music = patched_generate_music
     # CRITICAL: Update module-level reference to use patched version
