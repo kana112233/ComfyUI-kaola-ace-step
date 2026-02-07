@@ -142,7 +142,7 @@ if ACESTEP_AVAILABLE:
                 prompt += f"\nlanguage: {vocal_language.strip()}"
             prompt += f"\n\n# Lyric\n{lyrics}\n"
             
-            print(f"[MONKEY PATCH DEBUG] Built prompt with instrumental={instrumental_str}, language={vocal_language}")
+            print(f"[ACE_STEP] Phase 1 Prompt:\n{prompt}")
             
             return self.llm_tokenizer.apply_chat_template(
                 [
@@ -207,21 +207,28 @@ if ACESTEP_AVAILABLE:
             params.caption = params.caption + caption_suffix
             print(f"[MONKEY PATCH DEBUG] CoT disabled - appended to caption: instrumental={instrumental_str}, language={language_str}")
             
-        # Fix: Seed handling in upstream is sensitive to int vs list
-        if config and hasattr(config, 'seeds'):
-             if isinstance(config.seeds, int):
-                  config.seeds = [config.seeds]
-        
         # Sampling parameters extraction
         lm_top_k = getattr(params, 'lm_top_k', None)
         lm_top_p = getattr(params, 'lm_top_p', None)
+        lm_temp = getattr(params, 'lm_temperature', 0.0)
         
+        print(f"[ACE_STEP] Generation Start:")
+        print(f"  - Task: {params.task_type}")
+        print(f"  - Language: {params.vocal_language}")
+        print(f"  - Instrumental: {params.instrumental}")
+        print(f"  - LLM Config: temp={lm_temp}, top_k={lm_top_k}, top_p={lm_top_p}")
+        if config and hasattr(config, 'seeds'):
+             if isinstance(config.seeds, int):
+                  config.seeds = [config.seeds]
+
         if llm_handler is not None:
             llm_handler._patch_top_k = lm_top_k
             llm_handler._patch_top_p = lm_top_p
 
+        print(f"  - DiT Config: steps={params.inference_steps}, seed={config.seeds}")
+        print(f"[ACE_STEP] Generation End.")
         return _original_generate_music(dit_handler, llm_handler, params, config, **kwargs)
-
+ 
     
     acestep.inference.generate_music = patched_generate_music
     # CRITICAL: Update module-level reference to use patched version
@@ -247,103 +254,32 @@ if ACESTEP_AVAILABLE:
     LLMHandler.generate_with_stop_condition = patched_generate_with_stop_condition
 
     # --------------------------------------------------------------------------------
-    # MonkeyPatch LLMHandler.build_formatted_prompt_for_inspiration
+    # MonkeyPatch LLMHandler
     # --------------------------------------------------------------------------------
     _original_build_formatted_prompt_for_inspiration = LLMHandler.build_formatted_prompt_for_inspiration
-    def patched_build_formatted_prompt_for_inspiration(self, query: str, instrumental: bool = False, *args, **kwargs):
-        vocal_language = getattr(self, '_patch_vocal_language', None)
-        is_negative_prompt = kwargs.get('is_negative_prompt', False)
-        if len(args) > 0: is_negative_prompt = args[0]
+    def patched_build_formatted_prompt_for_inspiration(self, query, **kwargs):
+        # Use bridged attributes if they were set by patched_generate_music or create_sample
+        vocal_language = getattr(self, "_patch_vocal_language", "unknown")
+        instrumental = getattr(self, "_patch_instrumental", False)
         
-        if not is_negative_prompt:
-            from acestep.constants import DEFAULT_LM_INSPIRED_INSTRUCTION
-            instrumental_str = "true" if instrumental else "false"
-            user_content = f"{query}\n\ninstrumental: {instrumental_str}"
-            if vocal_language and vocal_language.strip() and vocal_language.strip().lower() != "unknown":
-                user_content += f"\nlanguage: {vocal_language.strip()}"
-            
-            return self.llm_tokenizer.apply_chat_template(
-                [
-                    {"role": "system", "content": f"# Instruction\n{DEFAULT_LM_INSPIRED_INSTRUCTION}\n\n"},
-                    {"role": "user", "content": user_content},
-                ],
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-        return _original_build_formatted_prompt_for_inspiration(self, query, instrumental, *args, **kwargs)
+        # Inject into prompt
+        # We manually build the suffix to ensure LLM follows the requested language
+        if vocal_language and vocal_language != "unknown":
+            query += f"\n\nIMPORTANT: The song must be in {vocal_language} language."
+        if instrumental:
+             query += "\n\nIMPORTANT: This must be an instrumental track (no vocals). [Instrumental]"
+        
+        return _original_build_formatted_prompt_for_inspiration(self, query, **kwargs)
     
     LLMHandler.build_formatted_prompt_for_inspiration = patched_build_formatted_prompt_for_inspiration
 
-    # --------------------------------------------------------------------------------
-    # MonkeyPatch LLMHandler.create_sample_from_query
-    # --------------------------------------------------------------------------------
     _original_create_sample_from_query = LLMHandler.create_sample_from_query
-    def patched_create_sample_from_query(self, query: str, instrumental: bool = False, vocal_language: Optional[str] = None, *args, **kwargs):
-        # Extract custom parameters from kwargs if provided (passed from Create Sample node)
-        temperature = kwargs.pop('temperature', 0.0)
-        top_k = kwargs.pop('top_k', None)
-        top_p = kwargs.pop('top_p', None)
-        repetition_penalty = kwargs.pop('repetition_penalty', 1.0)
-        seed = kwargs.pop('seed', -1)
-        
-        # Set bridge attributes for other patches to use
-        self._patch_vocal_language = vocal_language
-        self._patch_instrumental = instrumental
-        
-        # Original create_sample_from_query logic uses generate_from_formatted_prompt with a dict cfg
-        # We need to ensure regenerate_from_formatted_prompt also respects our parameters
-        # However, a simpler way is to re-implement the core logic here with our parameters
-        if not getattr(self, "llm_initialized", False):
-            return {}, "❌ 5Hz LM not initialized. Please initialize it first."
-            
-        if not query or not query.strip():
-            query = "NO USER INPUT"
-            
-        # Build prompt
-        formatted_prompt = self.build_formatted_prompt_for_inspiration(query=query, instrumental=instrumental)
-        
-        # Build metadata injection
-        user_metadata = None
-        if vocal_language and vocal_language.strip() and vocal_language.strip().lower() != "unknown":
-            user_metadata = {"language": vocal_language.strip()}
-            
-        # Use generate_from_formatted_prompt with OUR parameters
-        output_text, status = self.generate_from_formatted_prompt(
-            formatted_prompt=formatted_prompt,
-            cfg={
-                "temperature": temperature,
-                "top_k": top_k,
-                "top_p": top_p,
-                "repetition_penalty": repetition_penalty,
-                "target_duration": None,
-                "user_metadata": user_metadata,
-                "skip_caption": False,
-                "skip_language": False,
-                "skip_genres": False,
-                "generation_phase": "understand",
-                "caption": "",
-                "lyrics": "",
-                "seed": seed,
-            },
-            use_constrained_decoding=kwargs.get('use_constrained_decoding', True),
-            constrained_decoding_debug=kwargs.get('constrained_decoding_debug', False),
-            stop_at_reasoning=False,
-        )
-        
-        if not output_text:
-            return {}, status
-            
-        # Parse and extract
-        metadata, _ = self.parse_lm_output(output_text)
-        lyrics = self._extract_lyrics_from_output(output_text)
-        if lyrics:
-            metadata['lyrics'] = lyrics
-        elif instrumental:
-            metadata['lyrics'] = "[Instrumental]"
-        metadata['instrumental'] = instrumental
-        
-        return metadata, f"✅ Sample created successfully\nGenerated fields: {metadata}"
-
+    def patched_create_sample_from_query(self, query, **kwargs):
+        # Bridge params to inspiration
+        self._patch_vocal_language = kwargs.get("vocal_language", "unknown")
+        self._patch_instrumental = kwargs.get("instrumental", False)
+        return _original_create_sample_from_query(self, query, **kwargs)
+    
     LLMHandler.create_sample_from_query = patched_create_sample_from_query
     print("Monkeypatched AceStepHandler.process_src_audio to use soundfile")
 
@@ -533,21 +469,41 @@ class ACE_STEP_BASE:
         device: str = "auto",
         offload_to_cpu: bool = False,
         lora_info: Optional[Dict[str, Any]] = None,
+        quantization: Optional[str] = None,
+        compile_model: bool = False,
     ):
         """Initialize ACE-Step handlers if not already initialized"""
+        
+        # LoRA - Quantization conflict check
+        # PEFT is incompatible with torchao quantization (int8_weight_only etc)
+        if lora_info and lora_info.get("path") and quantization and quantization != "None":
+            print(f"[initialize_handlers] WARNING: LoRA and Quantization are incompatible. Disabling quantization for LoRA compatibility.")
+            quantization = None
+            # If quantization is disabled, we can still compile, but upstream initialize_service 
+            # might expect compile_model=True for quantization. 
+            # If quantization is None, compile_model is optional quality/speed trade-off.
+
         if self.handlers_initialized:
             # Check if handlers are truly initialized (model loaded)
             if self.dit_handler and getattr(self.dit_handler, "model", None) is not None:
-                # Clear CUDA cache before reusing handlers to prevent OOM
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                
-                # Update LoRA state even if handlers are reused
-                self._update_lora_state(self.dit_handler, lora_info)
-                return self.dit_handler, self.llm_handler
+                # Check if quantization status matches
+                # If current handler has different quantization, we need to re-initialize
+                # because quantization is applied at load time
+                if getattr(self.dit_handler, "quantization", None) != (None if quantization == "None" else quantization):
+                    print(f"[initialize_handlers] Quantization changed from {self.dit_handler.quantization} to {quantization}. Re-initializing.")
+                    self.handlers_initialized = False
+                else:
+                    # Clear CUDA cache before reusing handlers to prevent OOM
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    
+                    # Update LoRA state even if handlers are reused
+                    self._update_lora_state(self.dit_handler, lora_info)
+                    return self.dit_handler, self.llm_handler
             
-            print("[initialize_handlers] Handlers marked initialized but model is None. Re-initializing.")
-            self.handlers_initialized = False
+            if self.handlers_initialized: # still?
+                print("[initialize_handlers] Handlers marked initialized but model is None. Re-initializing.")
+                self.handlers_initialized = False
 
         if not ACESTEP_AVAILABLE:
             raise RuntimeError("ACE-Step is not installed. Please install it first.")
@@ -559,7 +515,7 @@ class ACE_STEP_BASE:
         # Auto-detect device if "auto" is specified
         if device == "auto":
             device = self.auto_detect_device()
-
+            print(f"[ACE_STEP] Auto-detected device: {device}")
         try:
             # Resolve checkpoint path (converts relative name to full path)
             checkpoint_dir = resolve_checkpoint_path(checkpoint_dir)
@@ -596,13 +552,16 @@ class ACE_STEP_BASE:
 
             self.dit_handler._get_project_root = _patched_get_project_root
 
+            print(f"[ACE_STEP] Initializing DiT service (quantization: {quantization}, compile: {compile_model})")
             self.dit_handler.initialize_service(
                 project_root=checkpoint_dir,
                 config_path=config_path,
                 device=device,
                 offload_to_cpu=offload_to_cpu,
+                quantization=None if quantization == "None" else quantization,
+                compile_model=compile_model,
             )
-
+            print(f"[ACE_STEP] DiT service initialized. Quantization: {self.dit_handler.quantization}")
             # Initialize LLM handler (pass dtype from DiT handler)
             # Use "pt" backend instead of "vllm" to avoid process group conflicts with ComfyUI
             self.llm_handler = LLMHandler()
@@ -641,14 +600,24 @@ class ACE_STEP_BASE:
             # Handler doesn't track current path.
             # We'll just load it. It handles unloading internally.
             
-            print(f"[initialize_handlers] Loading LoRA: {path} (scale: {scale})")
+            print(f"[ACE_STEP] Loading LoRA API: {path} (scale: {scale})")
             handler.load_lora(path)
             handler.set_lora_scale(scale)
+            
+            # When scale is 0, completely disable LoRA adapter layers
+            # to prevent structural interference with the model
+            if scale == 0:
+                handler.set_use_lora(False)
+                print(f"[ACE_STEP] LoRA scale=0, adapter layers disabled")
+            else:
+                handler.set_use_lora(True)
+                print(f"[ACE_STEP] LoRA active with scale {scale}")
         else:
             # Ensure no LoRA is loaded if not requested
             if handler.lora_loaded:
-                print(f"[initialize_handlers] Unloading LoRA")
+                print(f"[ACE_STEP] Unloading LoRA")
                 handler.unload_lora()
+
 
 
 class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
@@ -679,6 +648,8 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 "shift": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 5.0, "tooltip": "Sequence length scaling factor, default is 1.0."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
                 "lm_temperature": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "tooltip": "Sampling temperature for the language model. 0.0 is most stable (recommended)."}),
+                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
+                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
             },
@@ -711,6 +682,8 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         shift: float = 1.0,
         thinking: bool = True,
         lm_temperature: float = 0.0,
+        quantization: str = "None",
+        compile_model: bool = False,
         audio_format: str = "flac",
         lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str]:
@@ -725,6 +698,8 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             lm_model_path=lm_model_path,
             device=device,
             lora_info=lora_info,
+            quantization=quantization,
+            compile_model=compile_model,
         )
 
         # Prepare generation parameters
@@ -819,6 +794,8 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
             "optional": {
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics. Leave empty to attempt extraction from original or keep consistency."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
+                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
+                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
             },
@@ -841,6 +818,8 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
         seed: int,
         inference_steps: int,
         device: str,
+        quantization: str = "None",
+        compile_model: bool = False,
         lyrics: str = "",
         thinking: bool = True,
         audio_format: str = "flac",
@@ -868,6 +847,8 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 lm_model_path=lm_model_path,
                 device=device,
                 lora_info=lora_info,
+                quantization=quantization,
+                compile_model=compile_model,
             )
 
             # Prepare generation parameters
@@ -957,6 +938,8 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
             },
             "optional": {
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
+                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
+                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
             },
@@ -979,6 +962,8 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
         seed: int,
         inference_steps: int,
         device: str,
+        quantization: str = "None",
+        compile_model: bool = False,
         thinking: bool = True,
         audio_format: str = "flac",
         lora_info: Optional[Dict[str, Any]] = None,
@@ -1005,6 +990,8 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 lm_model_path=lm_model_path,
                 device=device,
                 lora_info=lora_info,
+                quantization=quantization,
+                compile_model=compile_model,
             )
 
             # Prepare generation parameters
@@ -1094,6 +1081,8 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             "optional": {
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
                 "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
+                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
+                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
@@ -1115,8 +1104,11 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         seed: int,
         inference_steps: int,
         device: str,
+        quantization: str = "None",
+        compile_model: bool = False,
         instrumental: bool = False,
-        vocal_language: str = "auto",
+        vocal_language: str = "unknown",
+        bpm: int = 120,
         thinking: bool = True,
         audio_format: str = "flac",
         lora_info: Optional[Dict[str, Any]] = None,
@@ -1132,6 +1124,8 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             lm_model_path=lm_model_path,
             device=device,
             lora_info=lora_info,
+            quantization=quantization,
+            compile_model=compile_model,
         )
 
         # Step 1: Create sample from description
