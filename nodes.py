@@ -43,11 +43,13 @@ import tempfile
 import soundfile as sf
 from typing import Dict, List, Optional, Tuple, Any
 import folder_paths
-from transformers import AutoModel, AutoTokenizer
-from diffusers.models import AutoencoderOobleck
 
 comfy_path = folder_paths.__file__.replace("__init__.py", "")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "acestep_repo"))
+
+# Import our wrapper module
+from acestep_wrapper import ACEStepWrapper
+from acestep_wrapper import ACEStepWrapper, create_handler_from_wrapper
 
 try:
     from acestep.handler import AceStepHandler
@@ -573,154 +575,32 @@ class ACE_STEP_BASE:
         quantization: Optional[str] = None,
         compile_model: bool = False,
     ):
-        """Initialize DiT handler directly, bypassing upstream's initialize_service.
+        """Initialize DiT handler using ACEStepWrapper
 
         This avoids the hardcoded "checkpoints" subdirectory requirement and
         works with ComfyUI's model directory structure.
         """
-        import traceback
-        from acestep.gpu_config import get_global_gpu_config
+        # Use wrapper to initialize all components
+        wrapper = ACEStepWrapper()
+        wrapper.initialize(
+            checkpoint_dir=checkpoint_dir,
+            config_path=config_path,
+            device=device,
+            offload_to_cpu=offload_to_cpu,
+            quantization=quantization,
+            compile_model=compile_model,
+        )
 
-        # Auto-detect device
-        if device == "auto":
-            if hasattr(torch, 'xpu') and torch.xpu.is_available():
-                device = "xpu"
-            elif torch.cuda.is_available():
-                device = "cuda"
-            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                device = "mps"
-            else:
-                device = "cpu"
+        # Copy wrapper attributes to dit_handler
+        for attr in ['device', 'dtype', 'offload_to_cpu', 'model', 'vae',
+                     'text_encoder', 'text_tokenizer', 'silence_latent']:
+            if hasattr(wrapper, attr):
+                setattr(dit_handler, attr, getattr(wrapper, attr))
 
-        # Set handler attributes
-        dit_handler.device = device
-        dit_handler.offload_to_cpu = offload_to_cpu
+        # Set additional required attributes
         dit_handler.offload_dit_to_cpu = False
-        dit_handler.dtype = torch.bfloat16 if device in ["cuda", "xpu"] else torch.float32
-        dit_handler.quantization = quantization
-
-        # Validate quantization requirements
-        if quantization is not None:
-            assert compile_model, "Quantization requires compile_model to be True"
-            try:
-                import torchao
-            except ImportError:
-                raise ImportError("torchao is required for quantization")
-
-        # Build model path directly (ComfyUI structure: checkpoint_dir/config_path)
-        model_path = os.path.join(checkpoint_dir, config_path)
-
-        if not os.path.exists(model_path):
-            raise RuntimeError(
-                f"Model not found at {model_path}\n"
-                f"Please ensure ACE-Step models are installed in: {checkpoint_dir}\n"
-                f"Expected structure: {checkpoint_dir}/{config_path}/"
-            )
-
-        print(f"[ACE_STEP] Loading DiT model from: {model_path}")
-
-        # Determine attention implementation
-        use_flash_attention = dit_handler.is_flash_attention_available()
-        if use_flash_attention:
-            attn_implementation = "flash_attention_2"
-        else:
-            attn_implementation = "sdpa"
-
-        # Load the model
-        try:
-            print(f"[ACE_STEP] Loading with attention: {attn_implementation}")
-            dit_handler.model = AutoModel.from_pretrained(
-                model_path,
-                trust_remote_code=True,
-                attn_implementation=attn_implementation,
-                dtype="bfloat16"
-            )
-        except Exception as e:
-            print(f"[ACE_STEP] Failed with {attn_implementation}: {e}")
-            if attn_implementation == "sdpa":
-                print("[ACE_STEP] Falling back to eager attention")
-                attn_implementation = "eager"
-                dit_handler.model = AutoModel.from_pretrained(
-                    model_path,
-                    trust_remote_code=True,
-                    attn_implementation=attn_implementation
-                )
-            else:
-                raise e
-
-        dit_handler.model.config._attn_implementation = attn_implementation
         dit_handler.config = dit_handler.model.config
-
-        # Move model to device
-        if not offload_to_cpu:
-            dit_handler.model = dit_handler.model.to(device).to(dit_handler.dtype)
-        else:
-            dit_handler.model = dit_handler.model.to("cpu").to(dit_handler.dtype)
-
-        dit_handler.model.eval()
-
-        # Compile model if requested
-        if compile_model:
-            if not hasattr(dit_handler.model.__class__, '__len__'):
-                def _model_len(model_self):
-                    return 0
-                dit_handler.model.__class__.__len__ = _model_len
-
-            dit_handler.model = torch.compile(dit_handler.model)
-
-            # Apply quantization
-            if quantization:
-                from torchao.quantization import quantize_
-                if quantization == "int8_weight_only":
-                    from torchao.quantization import Int8WeightOnlyConfig
-                    quant_config = Int8WeightOnlyConfig()
-                elif quantization == "fp8_weight_only":
-                    from torchao.quantization import Float8WeightOnlyConfig
-                    quant_config = Float8WeightOnlyConfig()
-                elif quantization == "w8a8_dynamic":
-                    from torchao.quantization import Int8DynamicActivationInt8WeightConfig, MappingType
-                    quant_config = Int8DynamicActivationInt8WeightConfig(act_mapping_type=MappingType.ASYMMETRIC)
-                else:
-                    raise ValueError(f"Unsupported quantization: {quantization}")
-
-                quantize_(dit_handler.model, quant_config)
-
-        # Load silence_latent (required for padding and text2music)
-        silence_latent_path = os.path.join(model_path, "silence_latent.pt")
-        if os.path.exists(silence_latent_path):
-            dit_handler.silence_latent = torch.load(silence_latent_path).transpose(1, 2)
-            dit_handler.silence_latent = dit_handler.silence_latent.to(device).to(dit_handler.dtype)
-            print(f"[ACE_STEP] Loaded silence_latent from: {silence_latent_path}")
-        else:
-            raise RuntimeError(f"Silence latent not found at {silence_latent_path}")
-
-        # Load VAE (required for audio encoding/decoding)
-        vae_path = os.path.join(checkpoint_dir, "vae")
-        if os.path.exists(vae_path):
-            dit_handler.vae = AutoencoderOobleck.from_pretrained(vae_path)
-            vae_dtype = torch.bfloat16 if device in ["cuda", "xpu", "mps"] else torch.float32
-            if not offload_to_cpu:
-                dit_handler.vae = dit_handler.vae.to(device).to(vae_dtype)
-            else:
-                dit_handler.vae = dit_handler.vae.to("cpu").to(vae_dtype)
-            dit_handler.vae.eval()
-            print(f"[ACE_STEP] Loaded VAE from: {vae_path}")
-        else:
-            raise RuntimeError(f"VAE not found at {vae_path}")
-
-        # Load text encoder and tokenizer (required for text input processing)
-        text_encoder_path = os.path.join(checkpoint_dir, "Qwen3-Embedding-0.6B")
-        if os.path.exists(text_encoder_path):
-            dit_handler.text_tokenizer = AutoTokenizer.from_pretrained(text_encoder_path)
-            dit_handler.text_encoder = AutoModel.from_pretrained(text_encoder_path)
-            if not offload_to_cpu:
-                dit_handler.text_encoder = dit_handler.text_encoder.to(device).to(dit_handler.dtype)
-            else:
-                dit_handler.text_encoder = dit_handler.text_encoder.to("cpu").to(dit_handler.dtype)
-            dit_handler.text_encoder.eval()
-            print(f"[ACE_STEP] Loaded text encoder from: {text_encoder_path}")
-        else:
-            raise RuntimeError(f"Text encoder not found at {text_encoder_path}")
+        dit_handler.quantization = quantization
 
         print(f"[ACE_STEP] DiT handler initialized successfully")
 
