@@ -59,6 +59,15 @@ try:
         understand_music,
     )
     ACESTEP_AVAILABLE = True
+    
+    # Helper to instantiate GenerationParams safely if upstream version changes
+    def create_generation_params(**kwargs):
+        # Filter kwargs to only include those accepted by the upstream GenerationParams dataclass
+        import inspect
+        sig = inspect.signature(GenerationParams)
+        valid_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
+        return GenerationParams(**valid_kwargs)
+
 except ImportError:
     ACESTEP_AVAILABLE = False
     print("ACE-Step not installed. Please install it first: pip install acestep")
@@ -108,6 +117,222 @@ if ACESTEP_AVAILABLE:
 
     # Apply the patch
     AceStepHandler.process_src_audio = patched_process_src_audio
+
+    # --------------------------------------------------------------------------------
+    # MonkeyPatch LLM and Inference to fix missing lyrics issue
+    # --------------------------------------------------------------------------------
+    _original_build_formatted_prompt = LLMHandler.build_formatted_prompt
+    def patched_build_formatted_prompt(self, caption: str, lyrics: str = "", *args, **kwargs):
+        vocal_language = getattr(self, '_patch_vocal_language', None)
+        instrumental = getattr(self, '_patch_instrumental', False)
+        
+        # Check if is_negative_prompt is passed as pos arg or kwarg
+        is_negative_prompt = kwargs.get('is_negative_prompt', False)
+        if len(args) > 0: is_negative_prompt = args[0]
+        
+        if not is_negative_prompt:
+            from acestep.constants import DEFAULT_LM_INSTRUCTION
+            instrumental_str = "true" if instrumental else "false"
+            prompt = f"# Caption\n{caption}\n\ninstrumental: {instrumental_str}"
+            if vocal_language and vocal_language.strip() and vocal_language.strip().lower() != "unknown":
+                prompt += f"\nlanguage: {vocal_language.strip()}"
+            prompt += f"\n\n# Lyric\n{lyrics}\n"
+            
+            return self.llm_tokenizer.apply_chat_template(
+                [
+                    {"role": "system", "content": f"# Instruction\n{DEFAULT_LM_INSTRUCTION}\n\n"},
+                    {"role": "user", "content": prompt},
+                ],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        return _original_build_formatted_prompt(self, caption, lyrics, *args, **kwargs)
+    
+    LLMHandler.build_formatted_prompt = patched_build_formatted_prompt
+
+    _original_build_formatted_prompt_with_cot = LLMHandler.build_formatted_prompt_with_cot
+    def patched_build_formatted_prompt_with_cot(self, caption: str, lyrics: str, cot_text: str, *args, **kwargs):
+        vocal_language = getattr(self, '_patch_vocal_language', None)
+        instrumental = getattr(self, '_patch_instrumental', False)
+        
+        is_negative_prompt = kwargs.get('is_negative_prompt', False)
+        if len(args) > 0: is_negative_prompt = args[0]
+        
+        if not is_negative_prompt:
+            from acestep.constants import DEFAULT_LM_INSTRUCTION
+            instrumental_str = "true" if instrumental else "false"
+            user_prompt = f"# Caption\n{caption}\n\ninstrumental: {instrumental_str}"
+            if vocal_language and vocal_language.strip() and vocal_language.strip().lower() != "unknown":
+                user_prompt += f"\nlanguage: {vocal_language.strip()}"
+            user_prompt += f"\n\n# Lyric\n{lyrics}\n"
+            
+            return self.llm_tokenizer.apply_chat_template(
+                [
+                    {"role": "system", "content": f"# Instruction\n{DEFAULT_LM_INSTRUCTION}\n\n"},
+                    {"role": "user", "content": user_prompt},
+                    {"role": "assistant", "content": cot_text},
+                ],
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+        return _original_build_formatted_prompt_with_cot(self, caption, lyrics, cot_text, *args, **kwargs)
+    
+    LLMHandler.build_formatted_prompt_with_cot = patched_build_formatted_prompt_with_cot
+
+    import acestep.inference
+    _original_generate_music = acestep.inference.generate_music
+    def patched_generate_music(params, dit_handler, llm_handler=None, **kwargs):
+        if llm_handler is not None:
+            llm_handler._patch_vocal_language = params.vocal_language
+            llm_handler._patch_instrumental = params.instrumental
+            
+        # Fix: Seed handling in upstream is sensitive to int vs list
+        # We ensure it's a string if it's an int, to avoid len(config.seeds) crash in upstream
+        # Actually, let's fix the call params if they exist
+        config = kwargs.get('config')
+        if config and hasattr(config, 'seeds'):
+             if isinstance(config.seeds, int):
+                  # We can't easily change the class definition but we can modify the instance 
+                  # before it's used in the upstream function
+                  # However, upstream does `if isinstance(config.seeds, list)`.
+                  # If we change it to a list, it should work fine.
+                  config.seeds = [config.seeds]
+        
+        # Sampling parameters extraction
+        # Since we removed them from upstream GenerationParams, we might need to handle them here
+        # IF they are being passed through params.
+        # Check if params has these attributes (to avoid AttributeError)
+        lm_top_k = getattr(params, 'lm_top_k', None)
+        lm_top_p = getattr(params, 'lm_top_p', None)
+        
+        # If upstream llm_handler.generate_with_stop_condition doesn't support them anymore,
+        # we might need to bridge them via attributes on llm_handler too.
+        if llm_handler is not None:
+            llm_handler._patch_top_k = lm_top_k
+            llm_handler._patch_top_p = lm_top_p
+
+        return _original_generate_music(params, dit_handler, llm_handler, **kwargs)
+    
+    acestep.inference.generate_music = patched_generate_music
+
+    # --------------------------------------------------------------------------------
+    # MonkeyPatch LLMHandler.generate_with_stop_condition
+    # --------------------------------------------------------------------------------
+    _original_generate_with_stop_condition = LLMHandler.generate_with_stop_condition
+    def patched_generate_with_stop_condition(self, caption: str, lyrics: str, *args, **kwargs):
+        # Use bridged attributes if they were set by patched_generate_music or create_sample
+        top_k = getattr(self, '_patch_top_k', None)
+        top_p = getattr(self, '_patch_top_p', None)
+        
+        # Override if passed explicitly in kwargs
+        if top_k is not None and 'top_k' not in kwargs:
+            kwargs['top_k'] = top_k
+        if top_p is not None and 'top_p' not in kwargs:
+            kwargs['top_p'] = top_p
+            
+        return _original_generate_with_stop_condition(self, caption, lyrics, *args, **kwargs)
+        
+    LLMHandler.generate_with_stop_condition = patched_generate_with_stop_condition
+
+    # --------------------------------------------------------------------------------
+    # MonkeyPatch LLMHandler.build_formatted_prompt_for_inspiration
+    # --------------------------------------------------------------------------------
+    _original_build_formatted_prompt_for_inspiration = LLMHandler.build_formatted_prompt_for_inspiration
+    def patched_build_formatted_prompt_for_inspiration(self, query: str, instrumental: bool = False, *args, **kwargs):
+        vocal_language = getattr(self, '_patch_vocal_language', None)
+        is_negative_prompt = kwargs.get('is_negative_prompt', False)
+        if len(args) > 0: is_negative_prompt = args[0]
+        
+        if not is_negative_prompt:
+            from acestep.constants import DEFAULT_LM_INSPIRED_INSTRUCTION
+            instrumental_str = "true" if instrumental else "false"
+            user_content = f"{query}\n\ninstrumental: {instrumental_str}"
+            if vocal_language and vocal_language.strip() and vocal_language.strip().lower() != "unknown":
+                user_content += f"\nlanguage: {vocal_language.strip()}"
+            
+            return self.llm_tokenizer.apply_chat_template(
+                [
+                    {"role": "system", "content": f"# Instruction\n{DEFAULT_LM_INSPIRED_INSTRUCTION}\n\n"},
+                    {"role": "user", "content": user_content},
+                ],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        return _original_build_formatted_prompt_for_inspiration(self, query, instrumental, *args, **kwargs)
+    
+    LLMHandler.build_formatted_prompt_for_inspiration = patched_build_formatted_prompt_for_inspiration
+
+    # --------------------------------------------------------------------------------
+    # MonkeyPatch LLMHandler.create_sample_from_query
+    # --------------------------------------------------------------------------------
+    _original_create_sample_from_query = LLMHandler.create_sample_from_query
+    def patched_create_sample_from_query(self, query: str, instrumental: bool = False, vocal_language: Optional[str] = None, *args, **kwargs):
+        # Extract custom parameters from kwargs if provided (passed from Create Sample node)
+        temperature = kwargs.pop('temperature', 0.0)
+        top_k = kwargs.pop('top_k', None)
+        top_p = kwargs.pop('top_p', None)
+        repetition_penalty = kwargs.pop('repetition_penalty', 1.0)
+        seed = kwargs.pop('seed', -1)
+        
+        # Set bridge attributes for other patches to use
+        self._patch_vocal_language = vocal_language
+        self._patch_instrumental = instrumental
+        
+        # Original create_sample_from_query logic uses generate_from_formatted_prompt with a dict cfg
+        # We need to ensure regenerate_from_formatted_prompt also respects our parameters
+        # However, a simpler way is to re-implement the core logic here with our parameters
+        if not getattr(self, "llm_initialized", False):
+            return {}, "❌ 5Hz LM not initialized. Please initialize it first."
+            
+        if not query or not query.strip():
+            query = "NO USER INPUT"
+            
+        # Build prompt
+        formatted_prompt = self.build_formatted_prompt_for_inspiration(query=query, instrumental=instrumental)
+        
+        # Build metadata injection
+        user_metadata = None
+        if vocal_language and vocal_language.strip() and vocal_language.strip().lower() != "unknown":
+            user_metadata = {"language": vocal_language.strip()}
+            
+        # Use generate_from_formatted_prompt with OUR parameters
+        output_text, status = self.generate_from_formatted_prompt(
+            formatted_prompt=formatted_prompt,
+            cfg={
+                "temperature": temperature,
+                "top_k": top_k,
+                "top_p": top_p,
+                "repetition_penalty": repetition_penalty,
+                "target_duration": None,
+                "user_metadata": user_metadata,
+                "skip_caption": False,
+                "skip_language": False,
+                "skip_genres": False,
+                "generation_phase": "understand",
+                "caption": "",
+                "lyrics": "",
+                "seed": seed,
+            },
+            use_constrained_decoding=kwargs.get('use_constrained_decoding', True),
+            constrained_decoding_debug=kwargs.get('constrained_decoding_debug', False),
+            stop_at_reasoning=False,
+        )
+        
+        if not output_text:
+            return {}, status
+            
+        # Parse and extract
+        metadata, _ = self.parse_lm_output(output_text)
+        lyrics = self._extract_lyrics_from_output(output_text)
+        if lyrics:
+            metadata['lyrics'] = lyrics
+        elif instrumental:
+            metadata['lyrics'] = "[Instrumental]"
+        metadata['instrumental'] = instrumental
+        
+        return metadata, f"✅ Sample created successfully\nGenerated fields: {metadata}"
+
+    LLMHandler.create_sample_from_query = patched_create_sample_from_query
     print("Monkeypatched AceStepHandler.process_src_audio to use soundfile")
 
     # --------------------------------------------------------------------------------
@@ -455,7 +680,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         )
 
         # Prepare generation parameters
-        params = GenerationParams(
+        params = create_generation_params(
             task_type="text2music",
             caption=caption,
             lyrics=lyrics if lyrics else "",
@@ -471,6 +696,8 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             shift=shift,
             thinking=thinking,
             lm_temperature=lm_temperature,
+            lm_top_k=0,  # These might be filtered out if not in upstream
+            lm_top_p=1.0,
         )
 
         # Prepare generation config
@@ -858,7 +1085,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             raise RuntimeError(f"Sample creation failed: {sample_result.error}")
 
         # Step 2: Generate music using the sample
-        params = GenerationParams(
+        params = create_generation_params(
             task_type="text2music",
             caption=sample_result.caption,
             lyrics=sample_result.lyrics,
@@ -866,6 +1093,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             duration=sample_result.duration,
             keyscale=sample_result.keyscale,
             vocal_language=sample_result.language,
+            instrumental=instrumental,
             inference_steps=inference_steps,
             seed=seed,
             thinking=thinking,
