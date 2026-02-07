@@ -425,9 +425,42 @@ def get_acestep_checkpoints():
     paths = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)
     if not paths:
         # Fallback to default path if not found
-        default_path = os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)
-        return [default_path]
-    return paths
+        return [ACESTEP_MODEL_NAME]
+    # Return relative paths (just the model folder name)
+    # Store the mapping for later use when resolving the actual path
+    result = []
+    for p in paths:
+        # Get the relative name (last component of the path)
+        name = os.path.basename(p.rstrip('/\\'))
+        if not name:  # If path ends with separator
+            name = os.path.basename(os.path.dirname(p))
+        result.append(name if name else ACESTEP_MODEL_NAME)
+    return list(set(result)) if result else [ACESTEP_MODEL_NAME]
+
+# Cache for checkpoint path resolution
+_checkpoint_path_cache = {}
+
+def resolve_checkpoint_path(name: str) -> str:
+    """Resolve a checkpoint name to its full path."""
+    global _checkpoint_path_cache
+    if name in _checkpoint_path_cache:
+        return _checkpoint_path_cache[name]
+    
+    # Try to find the full path
+    paths = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)
+    for p in paths:
+        if os.path.basename(p.rstrip('/\\')) == name or name in p:
+            _checkpoint_path_cache[name] = p
+            return p
+    
+    # Fallback: assume it's relative to models_dir
+    full_path = os.path.join(folder_paths.models_dir, name)
+    if os.path.exists(full_path):
+        _checkpoint_path_cache[name] = full_path
+        return full_path
+    
+    # Last fallback: return the name as-is (might be absolute path already)
+    return name
 
 def get_available_peft_loras():
     lora_paths = []
@@ -516,6 +549,9 @@ class ACE_STEP_BASE:
             device = self.auto_detect_device()
 
         try:
+            # Resolve checkpoint path (converts relative name to full path)
+            checkpoint_dir = resolve_checkpoint_path(checkpoint_dir)
+            
             # Use ComfyUI's model directory if checkpoint_dir is not provided
             if not checkpoint_dir or checkpoint_dir == "./checkpoints":
                 checkpoint_dir = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)[0]
@@ -1284,16 +1320,15 @@ class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
             device=device,
         )
 
-        # Create sample
+        # Create sample (note: upstream create_sample doesn't support seed)
         result = create_sample(
             llm_handler=llm_handler,
             query=query,
             instrumental=instrumental,
             vocal_language=None if vocal_language == "auto" else vocal_language,
-            seed=seed,
+            temperature=temperature,
             top_k=top_k,
             top_p=top_p,
-            temperature=temperature,
         )
 
         if not result.success:
