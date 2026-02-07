@@ -489,17 +489,6 @@ class ACE_STEP_BASE:
                     f"See https://github.com/ACE-Step/Ace-Step1.5"
                 )
 
-            # Create checkpoints symlink if it doesn't exist
-            # ACE-Step expects: {project_root}/checkpoints/{model_name}
-            # ComfyUI uses: {models_dir}/acestep/{model_name}
-            checkpoints_dir = os.path.join(checkpoint_dir, "checkpoints")
-            if not os.path.exists(checkpoints_dir):
-                # Create a symlink: checkpoints -> checkpoint_dir (current directory)
-                # This makes both paths work:
-                # - {models_dir}/acestep/{model_name}
-                # - {models_dir}/acestep/checkpoints/{model_name}
-                os.symlink(checkpoint_dir, checkpoints_dir, target_is_directory=True)
-
             # Initialize DiT handler
             self.dit_handler = AceStepHandler()
 
@@ -522,7 +511,7 @@ class ACE_STEP_BASE:
             # Initialize LLM handler (pass dtype from DiT handler)
             # Use "pt" backend instead of "vllm" to avoid process group conflicts with ComfyUI
             self.llm_handler = LLMHandler()
-            self.llm_handler.initialize(
+            llm_status, llm_success = self.llm_handler.initialize(
                 checkpoint_dir=checkpoint_dir,
                 lm_model_path=lm_model_path,
                 backend="pt",  # Use PyTorch backend to avoid vLLM conflicts
@@ -530,6 +519,9 @@ class ACE_STEP_BASE:
                 offload_to_cpu=offload_to_cpu,
                 dtype=self.dit_handler.dtype,  # Critical: pass dtype from DiT handler
             )
+            print(f"[ACE_STEP] LLM handler init: {llm_status}")
+            if not llm_success:
+                raise RuntimeError(f"LLM initialization failed: {llm_status}")
 
             # Apply LoRA for fresh handler
             self._update_lora_state(self.dit_handler, lora_info)
