@@ -489,53 +489,12 @@ class ACE_STEP_BASE:
                     f"See https://github.com/ACE-Step/Ace-Step1.5"
                 )
 
-            # Initialize DiT handler
+            # Initialize DiT handler - bypass upstream's initialize_service to avoid
+            # the hardcoded "checkpoints" subdirectory requirement
             self.dit_handler = AceStepHandler()
-
-            # Monkey patch _get_project_root to handle ComfyUI's model directory structure
-            # Upstream code does: checkpoint_dir = os.path.join(actual_project_root, "checkpoints")
-            # To get ComfyUI path (models/acestep/Ace-Step1.5/config_path),
-            # we need actual_project_root to be the PARENT of the model directory
-            # So that: os.path.join(parent, "checkpoints") = parent/checkpoints
-            # But we want: checkpoint_dir/config_path = models/acestep/Ace-Step1.5/config_path
-            #
-            # Solution: Make checkpoint_dir point to parent, so upstream adds /checkpoints
-            # But ComfyUI's checkpoint_dir already points to the model directory...
-            #
-            # Actually, the cleanest solution: Don't pass project_root at all
-            # Let upstream use its default _get_project_root which handles this correctly
-            # We just need to ensure the model directory structure matches upstream's expectation
-
-            # TEMPORARY: Use a symlink or modify the path handling
-            # For now, let's make project_root point to the parent of acestep models dir
-            # If checkpoint_dir = /path/to/models/acestep/Ace-Step1.5
-            # We want upstream to use /path/to/models/acestep/Ace-Step1.5 as the base
-            # But upstream adds /checkpoints, so we need to trick it
-
-            # Better approach: Remove the upstream's /checkpoints addition by patching
-            # But that requires modifying upstream code significantly
-
-            # For now, let's just return the checkpoint_dir and accept that upstream
-            # will create /download to a checkpoints subdirectory
-            def _patched_get_project_root():
-                # Return checkpoint_dir minus the last directory (go up one level)
-                # If models/acestep/Ace-Step1.5, return models/acestep
-                # Then upstream adds /checkpoints → models/acestep/checkpoints
-                # And config is models/acestep/checkpoints/acestep-v15-turbo
-                # This still doesn't match ComfyUI's structure...
-                #
-                # The real issue: ComfyUI expects models directly under Ace-Step1.5/
-                # Upstream expects models under Ace-Step1.5/checkpoints/
-                #
-                # Solution: Return checkpoint_dir's parent, and create a symlink
-                # or accept that we need to restructure
-                return os.path.dirname(checkpoint_dir)
-
-            self.dit_handler._get_project_root = _patched_get_project_root
-
-            print(f"[ACE_STEP] Initializing DiT service (quantization: {quantization}, compile: {compile_model})")
-            self.dit_handler.initialize_service(
-                project_root=checkpoint_dir,
+            self._initialize_dit_service_direct(
+                dit_handler=self.dit_handler,
+                checkpoint_dir=checkpoint_dir,
                 config_path=config_path,
                 device=device,
                 offload_to_cpu=offload_to_cpu,
@@ -602,6 +561,129 @@ class ACE_STEP_BASE:
                 print(f"[ACE_STEP] Unloading LoRA")
                 handler.unload_lora()
 
+    def _initialize_dit_service_direct(
+        self,
+        dit_handler,
+        checkpoint_dir: str,
+        config_path: str,
+        device: str,
+        offload_to_cpu: bool = False,
+        quantization: Optional[str] = None,
+        compile_model: bool = False,
+    ):
+        """Initialize DiT handler directly, bypassing upstream's initialize_service.
+
+        This avoids the hardcoded "checkpoints" subdirectory requirement and
+        works with ComfyUI's model directory structure.
+        """
+        import traceback
+        from acestep.utils import get_global_gpu_config
+
+        # Auto-detect device
+        if device == "auto":
+            if hasattr(torch, 'xpu') and torch.xpu.is_available():
+                device = "xpu"
+            elif torch.cuda.is_available():
+                device = "cuda"
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+
+        # Set handler attributes
+        dit_handler.device = device
+        dit_handler.offload_to_cpu = offload_to_cpu
+        dit_handler.offload_dit_to_cpu = False
+        dit_handler.dtype = torch.bfloat16 if device in ["cuda", "xpu"] else torch.float32
+        dit_handler.quantization = quantization
+
+        # Validate quantization requirements
+        if quantization is not None:
+            assert compile_model, "Quantization requires compile_model to be True"
+            try:
+                import torchao
+            except ImportError:
+                raise ImportError("torchao is required for quantization")
+
+        # Build model path directly (ComfyUI structure: checkpoint_dir/config_path)
+        model_path = os.path.join(checkpoint_dir, config_path)
+
+        if not os.path.exists(model_path):
+            raise RuntimeError(
+                f"Model not found at {model_path}\n"
+                f"Please ensure ACE-Step models are installed in: {checkpoint_dir}\n"
+                f"Expected structure: {checkpoint_dir}/{config_path}/"
+            )
+
+        print(f"[ACE_STEP] Loading DiT model from: {model_path}")
+
+        # Determine attention implementation
+        use_flash_attention = dit_handler.is_flash_attention_available()
+        if use_flash_attention:
+            attn_implementation = "flash_attention_2"
+        else:
+            attn_implementation = "sdpa"
+
+        # Load the model
+        try:
+            print(f"[ACE_STEP] Loading with attention: {attn_implementation}")
+            dit_handler.model = AutoModel.from_pretrained(
+                model_path,
+                trust_remote_code=True,
+                attn_implementation=attn_implementation,
+                dtype="bfloat16"
+            )
+        except Exception as e:
+            print(f"[ACE_STEP] Failed with {attn_implementation}: {e}")
+            if attn_implementation == "sdpa":
+                print("[ACE_STEP] Falling back to eager attention")
+                attn_implementation = "eager"
+                dit_handler.model = AutoModel.from_pretrained(
+                    model_path,
+                    trust_remote_code=True,
+                    attn_implementation=attn_implementation
+                )
+            else:
+                raise e
+
+        dit_handler.model.config._attn_implementation = attn_implementation
+        dit_handler.config = dit_handler.model.config
+
+        # Move model to device
+        if not offload_to_cpu:
+            dit_handler.model = dit_handler.model.to(device).to(dit_handler.dtype)
+        else:
+            dit_handler.model = dit_handler.model.to("cpu").to(dit_handler.dtype)
+
+        dit_handler.model.eval()
+
+        # Compile model if requested
+        if compile_model:
+            if not hasattr(dit_handler.model.__class__, '__len__'):
+                def _model_len(model_self):
+                    return 0
+                dit_handler.model.__class__.__len__ = _model_len
+
+            dit_handler.model = torch.compile(dit_handler.model)
+
+            # Apply quantization
+            if quantization:
+                from torchao.quantization import quantize_
+                if quantization == "int8_weight_only":
+                    from torchao.quantization import Int8WeightOnlyConfig
+                    quant_config = Int8WeightOnlyConfig()
+                elif quantization == "fp8_weight_only":
+                    from torchao.quantization import Float8WeightOnlyConfig
+                    quant_config = Float8WeightOnlyConfig()
+                elif quantization == "w8a8_dynamic":
+                    from torchao.quantization import Int8DynamicActivationInt8WeightConfig, MappingType
+                    quant_config = Int8DynamicActivationInt8WeightConfig(act_mapping_type=MappingType.ASYMMETRIC)
+                else:
+                    raise ValueError(f"Unsupported quantization: {quantization}")
+
+                quantize_(dit_handler.model, quant_config)
+
+        print(f"[ACE_STEP] DiT model loaded successfully")
 
 
 class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
@@ -636,7 +718,6 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
                 "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
-                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
             },
         }
 
@@ -952,7 +1033,6 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
                 "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
-                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
             },
         }
 
