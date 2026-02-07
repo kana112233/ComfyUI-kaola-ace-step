@@ -794,6 +794,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
         thinking: bool = True,
         audio_format: str = "flac",
         lora_info: Optional[Dict[str, Any]] = None,
+        instruction: str = "",
     ) -> Tuple[Dict[str, Any], str, str]:
         import tempfile
 
