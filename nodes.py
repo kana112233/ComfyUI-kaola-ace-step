@@ -50,14 +50,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "acestep_repo"))
 try:
     from acestep.handler import AceStepHandler
     from acestep.llm_inference import LLMHandler
+    import acestep.inference as acestep_inference
     from acestep.inference import (
         GenerationParams,
         GenerationConfig,
-        generate_music,
         create_sample,
         format_sample,
         understand_music,
     )
+    # Access generate_music through module to ensure monkey patch works
+    generate_music = acestep_inference.generate_music
     ACESTEP_AVAILABLE = True
     
     # Helper to instantiate GenerationParams safely if upstream version changes
@@ -208,6 +210,8 @@ if ACESTEP_AVAILABLE:
         return _original_generate_music(dit_handler, llm_handler, params, config, **kwargs)
     
     acestep.inference.generate_music = patched_generate_music
+    # CRITICAL: Update module-level reference to use patched version
+    generate_music = patched_generate_music
 
     # --------------------------------------------------------------------------------
     # MonkeyPatch LLMHandler.generate_with_stop_condition
