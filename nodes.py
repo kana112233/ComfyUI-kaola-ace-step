@@ -43,6 +43,7 @@ import tempfile
 import soundfile as sf
 from typing import Dict, List, Optional, Tuple, Any
 import folder_paths
+from transformers import AutoModel
 
 comfy_path = folder_paths.__file__.replace("__init__.py", "")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "acestep_repo"))
