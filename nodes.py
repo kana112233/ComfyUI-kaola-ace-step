@@ -821,6 +821,10 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 compile_model=compile_model,
             )
 
+            # Auto-set instruction for cover task
+            # Cover task requires specific instruction for model to recognize the task type
+            cover_instruction = "Generate audio semantic tokens based on the given conditions:"
+
             # Prepare generation parameters
             params = GenerationParams(
                 task_type="cover",
@@ -836,7 +840,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 inference_steps=inference_steps,
                 guidance_scale=guidance_scale,
                 use_adg=use_adg,
-                instruction=instruction if instruction else "",
+                instruction=cover_instruction,  # Auto-set for cover task
                 seed=seed,
                 thinking=thinking,
                 # Disable all CoT features when thinking=False (required for LoRA compatibility)
