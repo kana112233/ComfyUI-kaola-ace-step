@@ -98,18 +98,27 @@
       },
       "widgets_values": [
         "jazz piano arrangement with swing feel",
-        "",
+        "Ace-Step1.5",
         "acestep-v15-turbo",
         "acestep-5Hz-lm-1.7B",
-        0.7,
+        0.5,
         1,
         42,
         "fixed",
         8,
+        7.0,
         "auto",
         "",
+        "auto",
+        false,
+        0,
+        "",
+        "",
+        false,
         true,
-        "flac"
+        "flac",
+        null,
+        ""
       ]
     },
     {

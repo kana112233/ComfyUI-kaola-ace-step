@@ -52,7 +52,7 @@
                 "A beautiful piano solo segment replacing the original audio",
                 0.0,
                 5.0,
-                "",
+                "Ace-Step1.5",
                 "acestep-v15-turbo",
                 "acestep-5Hz-lm-1.7B",
                 -1,
@@ -60,6 +60,8 @@
                 8,
                 "auto",
                 true,
+                "None",
+                false,
                 "flac"
             ]
         },

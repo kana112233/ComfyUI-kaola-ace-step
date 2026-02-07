@@ -46,19 +46,34 @@ import folder_paths
 
 comfy_path = folder_paths.__file__.replace("__init__.py", "")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "acestep_repo"))
+sys.path.insert(0, os.path.dirname(__file__))  # For acestep_wrapper
+
+# Import our wrapper module
+from acestep_wrapper import ACEStepWrapper, create_handler_from_wrapper
 
 try:
     from acestep.handler import AceStepHandler
     from acestep.llm_inference import LLMHandler
+    import acestep.inference as acestep_inference
     from acestep.inference import (
-        GenerationParams,
+        GenerationParams,   
         GenerationConfig,
-        generate_music,
         create_sample,
         format_sample,
         understand_music,
     )
+    # Access generate_music through module to ensure monkey patch works
+    generate_music = acestep_inference.generate_music
     ACESTEP_AVAILABLE = True
+    
+    # Helper to instantiate GenerationParams safely if upstream version changes
+    def create_generation_params(**kwargs):
+        # Filter kwargs to only include those accepted by the upstream GenerationParams dataclass
+        import inspect
+        sig = inspect.signature(GenerationParams)
+        valid_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
+        return GenerationParams(**valid_kwargs)
+
 except ImportError:
     ACESTEP_AVAILABLE = False
     print("ACE-Step not installed. Please install it first: pip install acestep")
@@ -108,6 +123,113 @@ if ACESTEP_AVAILABLE:
 
     # Apply the patch
     AceStepHandler.process_src_audio = patched_process_src_audio
+
+    # --------------------------------------------------------------------------------
+    # MonkeyPatch LLM and Inference to fix missing lyrics issue
+    # --------------------------------------------------------------------------------
+    # MonkeyPatch LLM and Inference to fix missing lyrics and language consistency
+    # --------------------------------------------------------------------------------
+    
+    # 1. Patch generate_music to handle instrumental logic and bridge params
+    import acestep.inference
+    _original_generate_music = acestep.inference.generate_music
+    def patched_generate_music(dit_handler, llm_handler, params, config, **kwargs):
+        # Handle instrumental -> lyrics convention
+        # If instrumental is True, we force lyrics to be "[Instrumental]"
+        # This aligns with upstream logic (often implicit) for instrumental generation
+        if params.instrumental:
+            print(f"[ACE_STEP] Instrumental mode: Setting lyrics to '[Instrumental]'")
+            params.lyrics = "[Instrumental]"
+
+        # Bridge vocal_language to llm_handler for use in generate_with_stop_condition
+        if llm_handler is not None:
+            # We bridge this so generate_with_stop_condition can use it
+            llm_handler._patch_vocal_language = params.vocal_language
+            
+            # Bridge sampling params
+            lm_top_k = getattr(params, 'lm_top_k', None)
+            lm_top_p = getattr(params, 'lm_top_p', None)
+            llm_handler._patch_top_k = lm_top_k
+            llm_handler._patch_top_p = lm_top_p
+        
+        lm_temp = getattr(params, 'lm_temperature', 0.0)
+        
+        print(f"[ACE_STEP] Generation Start:")
+        print(f"  - Task: {params.task_type}")
+        print(f"  - Language: {params.vocal_language}")
+        print(f"  - Instrumental: {params.instrumental}")
+        print(f"  - LLM Config: temp={lm_temp}, top_k={getattr(params, 'lm_top_k', None)}, top_p={getattr(params, 'lm_top_p', None)}")
+        
+        if config and hasattr(config, 'seeds'):
+             if isinstance(config.seeds, int):
+                  config.seeds = [config.seeds]
+
+        print(f"  - DiT Config: steps={params.inference_steps}, seed={config.seeds}")
+        return _original_generate_music(dit_handler, llm_handler, params, config, **kwargs)
+ 
+    acestep.inference.generate_music = patched_generate_music
+    # CRITICAL: Update module-level reference to use patched version
+    generate_music = patched_generate_music
+
+    # 2. Patch generate_with_stop_condition to inject vocal_language into user_metadata
+    _original_generate_with_stop_condition = LLMHandler.generate_with_stop_condition
+    def patched_generate_with_stop_condition(self, caption: str, lyrics: str, *args, **kwargs):
+        # Inject vocal_language into user_metadata
+        vocal_language = getattr(self, '_patch_vocal_language', None)
+        if vocal_language and vocal_language != 'unknown':
+            user_metadata = kwargs.get('user_metadata', {})
+            # user_metadata can be None coming from upstream
+            if user_metadata is None: user_metadata = {}
+            
+            if 'language' not in user_metadata:
+                print(f"[MONKEY PATCH] Injecting language '{vocal_language}' into user_metadata")
+                user_metadata['language'] = vocal_language
+                kwargs['user_metadata'] = user_metadata
+        
+        # Bridge sampling params
+        top_k = getattr(self, '_patch_top_k', None)
+        top_p = getattr(self, '_patch_top_p', None)
+        
+        # Override if passed explicitly in kwargs
+        if top_k is not None and 'top_k' not in kwargs:
+            kwargs['top_k'] = top_k
+        if top_p is not None and 'top_p' not in kwargs:
+            kwargs['top_p'] = top_p
+            
+        return _original_generate_with_stop_condition(self, caption, lyrics, *args, **kwargs)
+
+    LLMHandler.generate_with_stop_condition = patched_generate_with_stop_condition
+
+
+
+    # --------------------------------------------------------------------------------
+    # MonkeyPatch LLMHandler
+    # --------------------------------------------------------------------------------
+    _original_build_formatted_prompt_for_inspiration = LLMHandler.build_formatted_prompt_for_inspiration
+    def patched_build_formatted_prompt_for_inspiration(self, query, **kwargs):
+        # Use bridged attributes if they were set by patched_generate_music or create_sample
+        vocal_language = getattr(self, "_patch_vocal_language", "unknown")
+        instrumental = getattr(self, "_patch_instrumental", False)
+        
+        # Inject into prompt
+        # We manually build the suffix to ensure LLM follows the requested language
+        if vocal_language and vocal_language != "unknown":
+            query += f"\n\nIMPORTANT: The song must be in {vocal_language} language."
+        if instrumental:
+             query += "\n\nIMPORTANT: This must be an instrumental track (no vocals). [Instrumental]"
+        
+        return _original_build_formatted_prompt_for_inspiration(self, query, **kwargs)
+    
+    LLMHandler.build_formatted_prompt_for_inspiration = patched_build_formatted_prompt_for_inspiration
+
+    _original_create_sample_from_query = LLMHandler.create_sample_from_query
+    def patched_create_sample_from_query(self, query, **kwargs):
+        # Bridge params to inspiration
+        self._patch_vocal_language = kwargs.get("vocal_language", "unknown")
+        self._patch_instrumental = kwargs.get("instrumental", False)
+        return _original_create_sample_from_query(self, query, **kwargs)
+    
+    LLMHandler.create_sample_from_query = patched_create_sample_from_query
     print("Monkeypatched AceStepHandler.process_src_audio to use soundfile")
 
     # --------------------------------------------------------------------------------
@@ -194,6 +316,87 @@ def get_acestep_models():
             models.append(d)
     return sorted(list(set(models)))
 
+def get_acestep_checkpoints():
+    if not ACESTEP_AVAILABLE:
+        return [""]
+    paths = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)
+    if not paths:
+        # Fallback to default path if not found
+        return [ACESTEP_MODEL_NAME]
+    
+    result = []
+    for p in paths:
+        if os.path.exists(p):
+            # Use basename for display
+            name = os.path.basename(p.rstrip('/\\'))
+            if not name:  # If path ends with separator
+                name = os.path.basename(os.path.dirname(p))
+            result.append(name if name else ACESTEP_MODEL_NAME)
+    
+    unique_results = sorted(list(set(result)))
+    return unique_results if unique_results else [ACESTEP_MODEL_NAME]
+
+# Cache for checkpoint path resolution
+_checkpoint_path_cache = {}
+
+def resolve_checkpoint_path(name: str) -> str:
+    """Resolve a checkpoint name to its full path."""
+    global _checkpoint_path_cache
+    if name in _checkpoint_path_cache:
+        return _checkpoint_path_cache[name]
+    
+    # Try to find the full path
+    paths = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)
+    for p in paths:
+        if os.path.basename(p.rstrip('/\\')) == name or name in p:
+            _checkpoint_path_cache[name] = p
+            return p
+    
+    # Fallback: assume it's relative to models_dir
+    full_path = os.path.join(folder_paths.models_dir, name)
+    if os.path.exists(full_path):
+        _checkpoint_path_cache[name] = full_path
+        return full_path
+    
+    # Last fallback: return the name as-is (might be absolute path already)
+    return name
+
+def get_available_peft_loras():
+    lora_paths = []
+    # Search paths: 
+    # 1. ComfyUI/models/loras
+    # 2. ComfyUI/models/Ace-Step1.5/loras
+    search_paths = [
+        os.path.join(folder_paths.models_dir, "loras"),
+        os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME, "loras")
+    ]
+    
+    # Standardize models_dir for relpath
+    base_dir = os.path.abspath(folder_paths.models_dir)
+    
+    for search_path in search_paths:
+        if not os.path.exists(search_path):
+            continue
+        # PEFT LoRA is a directory containing adapter_config.json
+        for root, dirs, files in os.walk(search_path):
+            if "adapter_config.json" in files:
+                # Found a LoRA directory
+                # Use path relative to models_dir for cleaner display
+                abs_root = os.path.abspath(root)
+                try:
+                    rel_path = os.path.relpath(abs_root, base_dir)
+                    # Normalize to forward slashes for cross-platform compatibility
+                    rel_path = rel_path.replace("\\", "/")
+                    lora_paths.append(rel_path)
+                except ValueError:
+                    # In case they are on different drives
+                    lora_paths.append(abs_root)
+    
+    if not lora_paths:
+        return ["None"]
+        
+    return sorted(list(set(lora_paths)))
+
 
 class ACE_STEP_BASE:
     """Base class for ACE-Step nodes with handler management"""
@@ -226,18 +429,42 @@ class ACE_STEP_BASE:
         lm_model_path: str,
         device: str = "auto",
         offload_to_cpu: bool = False,
+        lora_info: Optional[Dict[str, Any]] = None,
+        quantization: Optional[str] = None,
+        compile_model: bool = False,
     ):
         """Initialize ACE-Step handlers if not already initialized"""
+        
+        # LoRA - Quantization conflict check
+        # PEFT is incompatible with torchao quantization (int8_weight_only etc)
+        if lora_info and lora_info.get("path") and quantization and quantization != "None":
+            print(f"[initialize_handlers] WARNING: LoRA and Quantization are incompatible. Disabling quantization for LoRA compatibility.")
+            quantization = None
+            # If quantization is disabled, we can still compile, but upstream initialize_service 
+            # might expect compile_model=True for quantization. 
+            # If quantization is None, compile_model is optional quality/speed trade-off.
+
         if self.handlers_initialized:
             # Check if handlers are truly initialized (model loaded)
             if self.dit_handler and getattr(self.dit_handler, "model", None) is not None:
-                # Clear CUDA cache before reusing handlers to prevent OOM
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                return self.dit_handler, self.llm_handler
+                # Check if quantization status matches
+                # If current handler has different quantization, we need to re-initialize
+                # because quantization is applied at load time
+                if getattr(self.dit_handler, "quantization", None) != (None if quantization == "None" else quantization):
+                    print(f"[initialize_handlers] Quantization changed from {self.dit_handler.quantization} to {quantization}. Re-initializing.")
+                    self.handlers_initialized = False
+                else:
+                    # Clear CUDA cache before reusing handlers to prevent OOM
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    
+                    # Update LoRA state even if handlers are reused
+                    self._update_lora_state(self.dit_handler, lora_info)
+                    return self.dit_handler, self.llm_handler
             
-            print("[initialize_handlers] Handlers marked initialized but model is None. Re-initializing.")
-            self.handlers_initialized = False
+            if self.handlers_initialized: # still?
+                print("[initialize_handlers] Handlers marked initialized but model is None. Re-initializing.")
+                self.handlers_initialized = False
 
         if not ACESTEP_AVAILABLE:
             raise RuntimeError("ACE-Step is not installed. Please install it first.")
@@ -249,8 +476,11 @@ class ACE_STEP_BASE:
         # Auto-detect device if "auto" is specified
         if device == "auto":
             device = self.auto_detect_device()
-
+            print(f"[ACE_STEP] Auto-detected device: {device}")
         try:
+            # Resolve checkpoint path (converts relative name to full path)
+            checkpoint_dir = resolve_checkpoint_path(checkpoint_dir)
+            
             # Use ComfyUI's model directory if checkpoint_dir is not provided
             if not checkpoint_dir or checkpoint_dir == "./checkpoints":
                 checkpoint_dir = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)[0]
@@ -263,37 +493,23 @@ class ACE_STEP_BASE:
                     f"See https://github.com/ACE-Step/Ace-Step1.5"
                 )
 
-            # Create checkpoints symlink if it doesn't exist
-            # ACE-Step expects: {project_root}/checkpoints/{model_name}
-            # ComfyUI uses: {models_dir}/acestep/{model_name}
-            checkpoints_dir = os.path.join(checkpoint_dir, "checkpoints")
-            if not os.path.exists(checkpoints_dir):
-                # Create a symlink: checkpoints -> checkpoint_dir (current directory)
-                # This makes both paths work:
-                # - {models_dir}/acestep/{model_name}
-                # - {models_dir}/acestep/checkpoints/{model_name}
-                os.symlink(checkpoint_dir, checkpoints_dir, target_is_directory=True)
-
-            # Initialize DiT handler
+            # Initialize DiT handler - bypass upstream's initialize_service to avoid
+            # the hardcoded "checkpoints" subdirectory requirement
             self.dit_handler = AceStepHandler()
-
-            # Monkey patch _get_project_root to use ComfyUI's model directory
-            def _patched_get_project_root():
-                return checkpoint_dir
-
-            self.dit_handler._get_project_root = _patched_get_project_root
-
-            self.dit_handler.initialize_service(
-                project_root=checkpoint_dir,
+            self._initialize_dit_service_direct(
+                dit_handler=self.dit_handler,
+                checkpoint_dir=checkpoint_dir,
                 config_path=config_path,
                 device=device,
                 offload_to_cpu=offload_to_cpu,
+                quantization=None if quantization == "None" else quantization,
+                compile_model=compile_model,
             )
-
+            print(f"[ACE_STEP] DiT service initialized. Quantization: {self.dit_handler.quantization}")
             # Initialize LLM handler (pass dtype from DiT handler)
             # Use "pt" backend instead of "vllm" to avoid process group conflicts with ComfyUI
             self.llm_handler = LLMHandler()
-            self.llm_handler.initialize(
+            llm_status, llm_success = self.llm_handler.initialize(
                 checkpoint_dir=checkpoint_dir,
                 lm_model_path=lm_model_path,
                 backend="pt",  # Use PyTorch backend to avoid vLLM conflicts
@@ -301,12 +517,92 @@ class ACE_STEP_BASE:
                 offload_to_cpu=offload_to_cpu,
                 dtype=self.dit_handler.dtype,  # Critical: pass dtype from DiT handler
             )
+            print(f"[ACE_STEP] LLM handler init: {llm_status}")
+            if not llm_success:
+                raise RuntimeError(f"LLM initialization failed: {llm_status}")
+
+            # Apply LoRA for fresh handler
+            self._update_lora_state(self.dit_handler, lora_info)
 
             self.handlers_initialized = True
             return self.dit_handler, self.llm_handler
 
         except Exception as e:
             raise RuntimeError(f"Failed to initialize ACE-Step handlers: {str(e)}")
+
+    def _update_lora_state(self, handler, lora_info):
+        """Helper to load/unload LoRA based on lora_info"""
+        if not handler:
+            return
+
+        if lora_info and lora_info.get("path"):
+            path = lora_info["path"]
+            scale = lora_info.get("scale", 1.0)
+            
+            # If a different LoRA is loaded? load_lora handles replacement usually?
+            # AceStepHandler implementation of load_lora: "Restore base decoder before loading new LoRA"
+            # So just calling load_lora works fine.
+            
+            # Optimization: check if same LoRA is already loaded? 
+            # Handler doesn't track current path.
+            # We'll just load it. It handles unloading internally.
+            
+            print(f"[ACE_STEP] Loading LoRA API: {path} (scale: {scale})")
+            handler.load_lora(path)
+            handler.set_lora_scale(scale)
+            
+            # When scale is 0, completely disable LoRA adapter layers
+            # to prevent structural interference with the model
+            if scale == 0:
+                handler.set_use_lora(False)
+                print(f"[ACE_STEP] LoRA scale=0, adapter layers disabled")
+            else:
+                handler.set_use_lora(True)
+                print(f"[ACE_STEP] LoRA active with scale {scale}")
+        else:
+            # Ensure no LoRA is loaded if not requested
+            if handler.lora_loaded:
+                print(f"[ACE_STEP] Unloading LoRA")
+                handler.unload_lora()
+
+    def _initialize_dit_service_direct(
+        self,
+        dit_handler,
+        checkpoint_dir: str,
+        config_path: str,
+        device: str,
+        offload_to_cpu: bool = False,
+        quantization: Optional[str] = None,
+        compile_model: bool = False,
+    ):
+        """Initialize DiT handler using ACEStepWrapper
+
+        This avoids the hardcoded "checkpoints" subdirectory requirement and
+        works with ComfyUI's model directory structure.
+        """
+        # Use wrapper to initialize all components
+        wrapper = ACEStepWrapper()
+        wrapper.initialize(
+            checkpoint_dir=checkpoint_dir,
+            config_path=config_path,
+            device=device,
+            offload_to_cpu=offload_to_cpu,
+            quantization=quantization,
+            compile_model=compile_model,
+        )
+
+        # Copy wrapper attributes to dit_handler
+        for attr in ['device', 'dtype', 'offload_to_cpu', 'model', 'vae',
+                     'text_encoder', 'text_tokenizer', 'silence_latent']:
+            if hasattr(wrapper, attr):
+                setattr(dit_handler, attr, getattr(wrapper, attr))
+
+        # Set additional required attributes
+        dit_handler.offload_dit_to_cpu = False
+        dit_handler.config = dit_handler.model.config
+        dit_handler.quantization = quantization
+
+        print(f"[ACE_STEP] DiT handler initialized successfully")
 
 
 class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
@@ -316,28 +612,31 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "caption": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0}),
-                "batch_size": ("INT", {"default": 2, "min": 1, "max": 8}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
-                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Text prompt or natural language description for music generation."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
+                "duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0, "tooltip": "Target duration of the generated music in seconds."}),
+                "batch_size": ("INT", {"default": 2, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
+                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "lyrics": ("STRING", {"default": "", "multiline": True}),
-                "bpm": ("INT", {"default": 0, "min": 0, "max": 300}),
-                "keyscale": ("STRING", {"default": ""}),
-                "timesignature": ("STRING", {"default": ""}),
-                "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown"}),
-                "instrumental": ("BOOLEAN", {"default": False}),
-                "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0}),
-                "shift": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 5.0}),
-                "thinking": ("BOOLEAN", {"default": True}),
-                "lm_temperature": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 2.0}),
-                "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
+                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
+                "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics. Leave empty for automatic generation by the language model."}),
+                "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Beats per minute. 0 for automatic detection."}),
+                "keyscale": ("STRING", {"default": "", "tooltip": "Musical key and scale (e.g., C Major)."}),
+                "timesignature": ("STRING", {"default": "", "tooltip": "Musical time signature (e.g., 4/4)."}),
+                "vocal_language": ("STRING", {"default": "unknown", "tooltip": "Vocal language (e.g., zh, en, ja, auto, unknown). Accepts string input from CreateSample node."}),
+                "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
+                "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "Strength of prompt following."}),
+                "shift": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 5.0, "tooltip": "Sequence length scaling factor, default is 1.0."}),
+                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
+                "lm_temperature": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "tooltip": "Sampling temperature for the language model. 0.0 is most stable (recommended)."}),
+                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
+                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
+                "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
             },
         }
 
@@ -367,8 +666,11 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         guidance_scale: float = 7.0,
         shift: float = 1.0,
         thinking: bool = True,
-        lm_temperature: float = 0.85,
+        lm_temperature: float = 0.0,
+        quantization: str = "None",
+        compile_model: bool = False,
         audio_format: str = "flac",
+        lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str]:
         # Clear CUDA cache before generation to prevent OOM
         if torch.cuda.is_available():
@@ -380,10 +682,13 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             config_path=config_path,
             lm_model_path=lm_model_path,
             device=device,
+            lora_info=lora_info,
+            quantization=quantization,
+            compile_model=compile_model,
         )
 
         # Prepare generation parameters
-        params = GenerationParams(
+        params = create_generation_params(
             task_type="text2music",
             caption=caption,
             lyrics=lyrics if lyrics else "",
@@ -398,7 +703,13 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             guidance_scale=guidance_scale,
             shift=shift,
             thinking=thinking,
+            # Disable all CoT features when thinking=False (required for LoRA compatibility)
+            use_cot_caption=thinking,
+            use_cot_language=thinking,
+            use_cot_metas=thinking,
             lm_temperature=lm_temperature,
+            lm_top_k=0,  # These might be filtered out if not in upstream
+            lm_top_p=1.0,
         )
 
         # Prepare generation config
@@ -454,21 +765,30 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "src_audio": ("AUDIO",),
-                "caption": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "audio_cover_strength": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0}),
-                "batch_size": ("INT", {"default": 1, "min": 1, "max": 8}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
-                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "src_audio": ("AUDIO", {"tooltip": "Source audio to be covered (remade in new style)."}),
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Description of the target musical style (e.g., 'A jazz version of this song')."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Model configuration (turbo is faster)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for metadata/lyrics."}),
+                "audio_cover_strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Strength of preserving original audio structure. Use LOWER (0.1-0.3) for more style change."}),
+                "batch_size": ("INT", {"default": 1, "min": 1, "max": 4, "tooltip": "Number of variations."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFFFFFFFFF, "tooltip": "Random seed."}),
+                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 100, "tooltip": "Steps. Turbo: 8, Base: 50+."}),
+                "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "CFG strength."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Processing platform."}),
             },
             "optional": {
-                "lyrics": ("STRING", {"default": "", "multiline": True}),
-                "thinking": ("BOOLEAN", {"default": True}),
-                "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
+                "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Optional lyrics."}),
+                "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown", "tooltip": "Target language."}),
+                "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Instrumental mode."}),
+                "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Target BPM (0 for keep original)."}),
+                "keyscale": ("STRING", {"default": "", "tooltip": "Musical key."}),
+                "timesignature": ("STRING", {"default": "", "tooltip": "Time signature."}),
+                "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance."}),
+                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Show LLM reasoning."}),
+                "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output format."}),
+                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA style model."}),
+                "instruction": ("STRING", {"default": "", "multiline": True, "tooltip": "Custom instruction (overrides default cover instruction)."}),
             },
         }
 
@@ -489,9 +809,20 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
         seed: int,
         inference_steps: int,
         device: str,
+        quantization: str = "None",
+        compile_model: bool = False,
         lyrics: str = "",
+        vocal_language: str = "unknown",
+        instrumental: bool = False,
+        bpm: int = 0,
+        keyscale: str = "",
+        timesignature: str = "",
+        use_adg: bool = False,
+        guidance_scale: float = 7.0,
         thinking: bool = True,
         audio_format: str = "flac",
+        lora_info: Optional[Dict[str, Any]] = None,
+        instruction: str = "",
     ) -> Tuple[Dict[str, Any], str, str]:
         import tempfile
 
@@ -514,7 +845,14 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 config_path=config_path,
                 lm_model_path=lm_model_path,
                 device=device,
+                lora_info=lora_info,
+                quantization=quantization,
+                compile_model=compile_model,
             )
+
+            # Auto-set instruction for cover task
+            # Cover task requires specific instruction for model to recognize the task type
+            cover_instruction = "Generate audio semantic tokens based on the given conditions:"
 
             # Prepare generation parameters
             params = GenerationParams(
@@ -522,11 +860,24 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 src_audio=temp_path,
                 caption=caption,
                 lyrics=lyrics if lyrics else "",
+                instrumental=instrumental,
+                vocal_language=vocal_language,
+                bpm=bpm if bpm > 0 else None,
+                keyscale=keyscale,
+                timesignature=timesignature,
                 audio_cover_strength=audio_cover_strength,
                 inference_steps=inference_steps,
+                guidance_scale=guidance_scale,
+                use_adg=use_adg,
+                instruction=cover_instruction,  # Auto-set for cover task
                 seed=seed,
                 thinking=thinking,
+                # Disable all CoT features when thinking=False (required for LoRA compatibility)
+                use_cot_caption=thinking,
+                use_cot_language=thinking,
+                use_cot_metas=thinking,
             )
+
 
             # Prepare generation config
             config = GenerationConfig(
@@ -585,20 +936,22 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "src_audio": ("AUDIO",),
-                "caption": ("STRING", {"default": "", "multiline": True}),
-                "repainting_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 600.0}),
-                "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0}),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
-                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "src_audio": ("AUDIO", {"tooltip": "The original audio signal to be repainted."}),
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Style description prompt for the repainted region."}),
+                "repainting_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 600.0, "tooltip": "Start time for the repainting region in seconds."}),
+                "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0, "tooltip": "End time for the repainting region in seconds. -1 means until the end of the audio."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for processing metadata."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
+                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "thinking": ("BOOLEAN", {"default": True}),
-                "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
+                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
+                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
+                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
+                "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
             },
         }
 
@@ -619,8 +972,11 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
         seed: int,
         inference_steps: int,
         device: str,
+        quantization: str = "None",
+        compile_model: bool = False,
         thinking: bool = True,
         audio_format: str = "flac",
+        lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str]:
         import tempfile
 
@@ -643,7 +999,14 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 config_path=config_path,
                 lm_model_path=lm_model_path,
                 device=device,
+                lora_info=lora_info,
+                quantization=quantization,
+                compile_model=compile_model,
             )
+
+            # Auto-set instruction for repaint task
+            # Repaint task requires specific instruction for model to recognize the task type
+            repaint_instruction = "Repaint the mask area based on the given conditions:"
 
             # Prepare generation parameters
             params = GenerationParams(
@@ -652,10 +1015,16 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 caption=caption,
                 repainting_start=repainting_start,
                 repainting_end=repainting_end if repainting_end > 0 else -1.0,
+                instruction=repaint_instruction,  # Auto-set for repaint task
                 inference_steps=inference_steps,
                 seed=seed,
                 thinking=thinking,
+                # Disable all CoT features when thinking=False (required for LoRA compatibility)
+                use_cot_caption=thinking,
+                use_cot_language=thinking,
+                use_cot_metas=thinking,
             )
+
 
             # Prepare generation config
             config = GenerationConfig(
@@ -715,20 +1084,23 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "query": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
-                "batch_size": ("INT", {"default": 2, "min": 1, "max": 8}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True}),
-                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "query": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language description or prompt for music generation."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
+                "batch_size": ("INT", {"default": 2, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
+                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "instrumental": ("BOOLEAN", {"default": False}),
-                "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto"}),
-                "thinking": ("BOOLEAN", {"default": True}),
-                "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
+                "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
+                "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
+                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
+                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
+                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
+                "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
+                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
             },
         }
 
@@ -747,10 +1119,14 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         seed: int,
         inference_steps: int,
         device: str,
+        quantization: str = "None",
+        compile_model: bool = False,
         instrumental: bool = False,
-        vocal_language: str = "auto",
+        vocal_language: str = "unknown",
+        bpm: int = 120,
         thinking: bool = True,
         audio_format: str = "flac",
+        lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str, str]:
         # Clear CUDA cache before generation to prevent OOM
         if torch.cuda.is_available():
@@ -762,6 +1138,9 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             config_path=config_path,
             lm_model_path=lm_model_path,
             device=device,
+            lora_info=lora_info,
+            quantization=quantization,
+            compile_model=compile_model,
         )
 
         # Step 1: Create sample from description
@@ -770,14 +1149,14 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             query=query,
             instrumental=instrumental,
             vocal_language=None if vocal_language == "auto" else vocal_language,
-            temperature=0.85,
+            temperature=0.0,
         )
 
         if not sample_result.success:
             raise RuntimeError(f"Sample creation failed: {sample_result.error}")
 
         # Step 2: Generate music using the sample
-        params = GenerationParams(
+        params = create_generation_params(
             task_type="text2music",
             caption=sample_result.caption,
             lyrics=sample_result.lyrics,
@@ -785,9 +1164,14 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             duration=sample_result.duration,
             keyscale=sample_result.keyscale,
             vocal_language=sample_result.language,
+            instrumental=instrumental,
             inference_steps=inference_steps,
             seed=seed,
             thinking=thinking,
+            # Disable all CoT features when thinking=False (required for LoRA compatibility)
+            use_cot_caption=thinking,
+            use_cot_language=thinking,
+            use_cot_metas=thinking,
         )
 
         # Prepare generation config
@@ -859,14 +1243,14 @@ class ACE_STEP_FORMAT_SAMPLE(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "caption": ("STRING", {"default": "", "multiline": True}),
-                "lyrics": ("STRING", {"default": "", "multiline": True}),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language description or prompt for music generation."}),
+                "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics to be formatted."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for formatting and enhancement."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "user_metadata": ("STRING", {"default": "{}"}),
+                "user_metadata": ("STRING", {"default": "{}", "tooltip": "Custom metadata in JSON format."}),
             },
         }
 
@@ -927,6 +1311,76 @@ class ACE_STEP_FORMAT_SAMPLE(ACE_STEP_BASE):
         return result.caption, result.lyrics, formatted_metadata
 
 
+class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
+    """Generate music description and lyrics from natural language query"""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "query": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language query describing the music you want to generate."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
+            },
+            "optional": {
+                "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
+                "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
+                "top_k": ("INT", {"default": 50, "min": 0, "max": 1000, "tooltip": "Top-K filtering parameter for sampling."}),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "tooltip": "Top-P (nucleus sampling) filtering parameter."}),
+                "temperature": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "tooltip": "Sampling temperature for the language model. 0.0 is most stable (recommended)."}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING", "STRING", "FLOAT", "INT", "STRING", "STRING")
+    RETURN_NAMES = ("caption", "lyrics", "duration", "bpm", "keyscale", "vocal_language")
+    FUNCTION = "generate_sample"
+    CATEGORY = "Audio/ACE-Step"
+
+    def generate_sample(
+        self,
+        query: str,
+        checkpoint_dir: str,
+        lm_model_path: str,
+        device: str,
+        instrumental: bool = False,
+        vocal_language: str = "auto",
+        top_k: int = 50,
+        top_p: float = 0.95,
+        temperature: float = 0.0,
+    ) -> Tuple[str, str, float, int, str, str]:
+        # Initialize handlers
+        dit_handler, llm_handler = self.initialize_handlers(
+            checkpoint_dir=checkpoint_dir,
+            config_path="acestep-v15-turbo",  # Dummy
+            lm_model_path=lm_model_path,
+            device=device,
+        )
+
+        # Create sample (note: upstream create_sample doesn't support seed)
+        result = create_sample(
+            llm_handler=llm_handler,
+            query=query,
+            instrumental=instrumental,
+            vocal_language=None if vocal_language == "auto" else vocal_language,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+        )
+
+        if not result.success:
+            raise RuntimeError(f"Sample creation failed: {result.error}")
+
+        return (
+            result.caption,
+            result.lyrics,
+            float(result.duration or 30.0),
+            int(result.bpm or 120),
+            result.keyscale or "",
+            result.language or "unknown",
+        )
+
+
 class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
     """Understand and analyze audio"""
 
@@ -934,17 +1388,20 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "audio": ("AUDIO",),
-                "checkpoint_dir": ("STRING", {"default": ""}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B"}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo"}),
-                "target_duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto"}),
+                "audio": ("AUDIO", {"tooltip": "The audio signal to be analyzed."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for audio analysis and understanding."}),
+                "target_duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0, "tooltip": "Target duration to reference during analysis."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "language": (["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt", "nl", "tr", "pl", "ar", "vi", "th"], {"default": "auto"}),
-                "temperature": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0}),
-                "thinking": ("BOOLEAN", {"default": True}),
+                "language": (["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt", "nl", "tr", "pl", "ar", "vi", "th"], {"default": "auto", "tooltip": "Hint the model about the vocal language in the audio."}),
+                "temperature": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature. Lower (0.0-0.3) = more precise/faithful, Higher (0.5+) = more creative. Try 0.1 for better accuracy."}),
+                "top_k": ("INT", {"default": 0, "min": 0, "max": 100, "tooltip": "Top-K sampling. 0 = disabled. Lower values (e.g., 20-50) can improve accuracy by limiting token choices."}),
+                "top_p": ("FLOAT", {"default": 0.9, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Top-P (nucleus) sampling. 1.0 = disabled. Lower values (e.g., 0.8-0.9) can improve accuracy."}),
+                "repetition_penalty": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1, "tooltip": "Repetition penalty. 1.0 = no penalty. Higher values (1.1-1.3) reduce repetitive lyrics."}),
+                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
             },
         }
 
@@ -964,6 +1421,9 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
         device: str,
         language: str = "auto",
         temperature: float = 0.3,
+        top_k: int = 0,
+        top_p: float = 0.9,
+        repetition_penalty: float = 1.0,
         thinking: bool = True,
     ) -> Tuple[str, str, float, str, str, str]:
         import tempfile
@@ -1007,11 +1467,14 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
                      print(f"[understand] Injected language hint: {lang_instruction}")
 
             try:
-                # Call understand_music
+                # Call understand_music with additional parameters for better accuracy
                 result = understand_music(
                     llm_handler=llm_handler,
                     audio_codes=input_codes,
                     temperature=temperature,
+                    top_k=top_k if top_k > 0 else None,
+                    top_p=top_p if top_p < 1.0 else None,
+                    repetition_penalty=repetition_penalty,
                 )
             finally:
                 # Restore original instruction strictly
@@ -1050,6 +1513,43 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
 
 
 
+class ACE_STEP_LORA_LOADER:
+    """Load PEFT LoRA for ACE-Step"""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "lora_path": (get_available_peft_loras(), {"default": "None", "tooltip": "Select the LoRA model to load."}),
+                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 5.0, "step": 0.1, "tooltip": "Strength of the LoRA effect."}),
+            }
+        }
+
+    RETURN_TYPES = ("ACE_STEP_LORA_INFO",)
+    RETURN_NAMES = ("lora_info",)
+    FUNCTION = "load_lora_config"
+    CATEGORY = "Audio/ACE-Step"
+
+    def load_lora_config(self, lora_path, strength):
+        if lora_path == "None" or not lora_path:
+            return (None,)
+            
+        # Resolve relative path back to absolute
+        abs_path = os.path.join(folder_paths.models_dir, lora_path)
+        if not os.path.exists(abs_path):
+             # Fallback: maybe it's already absolute (e.g. from old workflow)
+             if os.path.exists(lora_path):
+                 abs_path = lora_path
+             else:
+                 print(f"[ACE_STEP_LoRALoader] LoRA path not found: {lora_path}")
+                 return (None,)
+
+        return ({
+            "path": abs_path,
+            "scale": strength
+        },)
+
+
 # Node mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
     "ACE_STEP_TextToMusic": ACE_STEP_TEXT_TO_MUSIC,
@@ -1057,7 +1557,9 @@ NODE_CLASS_MAPPINGS = {
     "ACE_STEP_Repaint": ACE_STEP_REPAINT,
     "ACE_STEP_SimpleMode": ACE_STEP_SIMPLE_MODE,
     "ACE_STEP_FormatSample": ACE_STEP_FORMAT_SAMPLE,
+    "ACE_STEP_CreateSample": ACE_STEP_CREATE_SAMPLE,
     "ACE_STEP_Understand": ACE_STEP_UNDERSTAND,
+    "ACE_STEP_LoRALoader": ACE_STEP_LORA_LOADER,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1066,5 +1568,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_Repaint": "ACE-Step Repaint",
     "ACE_STEP_SimpleMode": "ACE-Step Simple Mode",
     "ACE_STEP_FormatSample": "ACE-Step Format Sample",
+    "ACE_STEP_CreateSample": "ACE-Step Create Sample",
     "ACE_STEP_Understand": "ACE-Step Understand",
+    "ACE_STEP_LoRALoader": "ACE-Step LoRA Loader",
 }
