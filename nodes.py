@@ -46,9 +46,9 @@ import folder_paths
 
 comfy_path = folder_paths.__file__.replace("__init__.py", "")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "acestep_repo"))
+sys.path.insert(0, os.path.dirname(__file__))  # For acestep_wrapper
 
 # Import our wrapper module
-from acestep_wrapper import ACEStepWrapper
 from acestep_wrapper import ACEStepWrapper, create_handler_from_wrapper
 
 try:
