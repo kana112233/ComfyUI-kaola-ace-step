@@ -577,7 +577,7 @@ class ACE_STEP_BASE:
         works with ComfyUI's model directory structure.
         """
         import traceback
-        from acestep.utils import get_global_gpu_config
+        from acestep.gpu_config import get_global_gpu_config
 
         # Auto-detect device
         if device == "auto":
