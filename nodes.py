@@ -365,6 +365,9 @@ def get_available_peft_loras():
         os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME, "loras")
     ]
     
+    # Standardize models_dir for relpath
+    base_dir = os.path.abspath(folder_paths.models_dir)
+    
     for search_path in search_paths:
         if not os.path.exists(search_path):
             continue
@@ -373,8 +376,15 @@ def get_available_peft_loras():
             if "adapter_config.json" in files:
                 # Found a LoRA directory
                 # Use path relative to models_dir for cleaner display
-                rel_path = os.path.relpath(root, folder_paths.models_dir)
-                lora_paths.append(rel_path)
+                abs_root = os.path.abspath(root)
+                try:
+                    rel_path = os.path.relpath(abs_root, base_dir)
+                    # Normalize to forward slashes for cross-platform compatibility
+                    rel_path = rel_path.replace("\\", "/")
+                    lora_paths.append(rel_path)
+                except ValueError:
+                    # In case they are on different drives
+                    lora_paths.append(abs_root)
     
     if not lora_paths:
         return ["None"]
@@ -725,24 +735,30 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "src_audio": ("AUDIO", {"tooltip": "The original audio signal to be covered."}),
-                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Description of the style for the cover version."}),
-                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for processing metadata."}),
-                "audio_cover_strength": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "tooltip": "Strength of preserving the original audio structure. 1.0 means full preservation, 0.0 means complete reconstruction."}),
-                "batch_size": ("INT", {"default": 1, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
-                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
+                "src_audio": ("AUDIO", {"tooltip": "Source audio to be covered (remade in new style)."}),
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Description of the target musical style (e.g., 'A jazz version of this song')."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Model configuration (turbo is faster)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for metadata/lyrics."}),
+                "audio_cover_strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Strength of preserving original audio structure. Use LOWER (0.1-0.3) for more style change."}),
+                "batch_size": ("INT", {"default": 1, "min": 1, "max": 4, "tooltip": "Number of variations."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFFFFFFFFF, "tooltip": "Random seed."}),
+                "inference_steps": ("INT", {"default": 8, "min": 1, "max": 100, "tooltip": "Steps. Turbo: 8, Base: 50+."}),
+                "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "CFG strength."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Processing platform."}),
             },
             "optional": {
-                "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics. Leave empty to attempt extraction from original or keep consistency."}),
-                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
-                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
-                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
-                "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
-                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
+                "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Optional lyrics."}),
+                "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown", "tooltip": "Target language."}),
+                "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Instrumental mode."}),
+                "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Target BPM (0 for keep original)."}),
+                "keyscale": ("STRING", {"default": "", "tooltip": "Musical key."}),
+                "timesignature": ("STRING", {"default": "", "tooltip": "Time signature."}),
+                "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance."}),
+                "thinking": ("BOOLEAN", {"default": True, "tooltip": "Show LLM reasoning."}),
+                "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output format."}),
+                "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA style model."}),
+                "instruction": ("STRING", {"default": "", "multiline": True, "tooltip": "Custom instruction (overrides default cover instruction)."}),
             },
         }
 
@@ -766,6 +782,13 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
         quantization: str = "None",
         compile_model: bool = False,
         lyrics: str = "",
+        vocal_language: str = "unknown",
+        instrumental: bool = False,
+        bpm: int = 0,
+        keyscale: str = "",
+        timesignature: str = "",
+        use_adg: bool = False,
+        guidance_scale: float = 7.0,
         thinking: bool = True,
         audio_format: str = "flac",
         lora_info: Optional[Dict[str, Any]] = None,
@@ -802,8 +825,15 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 src_audio=temp_path,
                 caption=caption,
                 lyrics=lyrics if lyrics else "",
+                instrumental=instrumental,
+                vocal_language=vocal_language,
+                bpm=bpm if bpm > 0 else None,
+                keyscale=keyscale,
+                timesignature=timesignature,
                 audio_cover_strength=audio_cover_strength,
                 inference_steps=inference_steps,
+                guidance_scale=guidance_scale,
+                use_adg=use_adg,
                 seed=seed,
                 thinking=thinking,
                 # Disable all CoT features when thinking=False (required for LoRA compatibility)
