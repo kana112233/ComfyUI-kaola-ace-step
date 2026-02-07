@@ -976,6 +976,10 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 compile_model=compile_model,
             )
 
+            # Auto-set instruction for repaint task
+            # Repaint task requires specific instruction for model to recognize the task type
+            repaint_instruction = "Repaint the mask area based on the given conditions:"
+
             # Prepare generation parameters
             params = GenerationParams(
                 task_type="repaint",
@@ -983,6 +987,7 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 caption=caption,
                 repainting_start=repainting_start,
                 repainting_end=repainting_end if repainting_end > 0 else -1.0,
+                instruction=repaint_instruction,  # Auto-set for repaint task
                 inference_steps=inference_steps,
                 seed=seed,
                 thinking=thinking,
