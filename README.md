@@ -111,6 +111,18 @@ See [examples/](examples/) directory for ready-to-use workflows.
 - **GPU**: 6GB+ VRAM recommended
 - **Disk**: ~8GB for models
 
+### 6. Using LoRA Models (e.g., Chinese New Year)
+
+Use the **ACE-Step LoRA Loader** node to apply LoRA adaptations.
+
+1. Place your LoRA model folder (containing `adapter_config.json`) in `ComfyUI/models/loras/` or `ComfyUI/models/Ace-Step1.5/loras/`.
+2. Add the **ACE-Step LoRA Loader** node.
+3. Select your LoRA from the dropdown.
+4. Connect the `lora_info` output to any ACE-Step generation node (TextToMusic, etc.).
+5. Adjust `strength` as needed (default 1.0).
+
+---
+
 ## Troubleshooting
 
 ### "Cannot install ACE-Step with Python 3.13"

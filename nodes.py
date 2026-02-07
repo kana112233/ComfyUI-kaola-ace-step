@@ -194,6 +194,30 @@ def get_acestep_models():
             models.append(d)
     return sorted(list(set(models)))
 
+def get_available_peft_loras():
+    lora_paths = []
+    # Search paths: 
+    # 1. ComfyUI/models/loras
+    # 2. ComfyUI/models/Ace-Step1.5/loras
+    search_paths = [
+        os.path.join(folder_paths.models_dir, "loras"),
+        os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME, "loras")
+    ]
+    
+    for search_path in search_paths:
+        if not os.path.exists(search_path):
+            continue
+        # PEFT LoRA is a directory containing adapter_config.json
+        for root, dirs, files in os.walk(search_path):
+            if "adapter_config.json" in files:
+                # Found a LoRA directory
+                lora_paths.append(root)
+    
+    if not lora_paths:
+        return ["None"]
+        
+    return sorted(list(set(lora_paths)))
+
 
 class ACE_STEP_BASE:
     """Base class for ACE-Step nodes with handler management"""
@@ -226,6 +250,7 @@ class ACE_STEP_BASE:
         lm_model_path: str,
         device: str = "auto",
         offload_to_cpu: bool = False,
+        lora_info: Optional[Dict[str, Any]] = None,
     ):
         """Initialize ACE-Step handlers if not already initialized"""
         if self.handlers_initialized:
@@ -234,6 +259,9 @@ class ACE_STEP_BASE:
                 # Clear CUDA cache before reusing handlers to prevent OOM
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                
+                # Update LoRA state even if handlers are reused
+                self._update_lora_state(self.dit_handler, lora_info)
                 return self.dit_handler, self.llm_handler
             
             print("[initialize_handlers] Handlers marked initialized but model is None. Re-initializing.")
@@ -302,11 +330,40 @@ class ACE_STEP_BASE:
                 dtype=self.dit_handler.dtype,  # Critical: pass dtype from DiT handler
             )
 
+            # Apply LoRA for fresh handler
+            self._update_lora_state(self.dit_handler, lora_info)
+
             self.handlers_initialized = True
             return self.dit_handler, self.llm_handler
 
         except Exception as e:
             raise RuntimeError(f"Failed to initialize ACE-Step handlers: {str(e)}")
+
+    def _update_lora_state(self, handler, lora_info):
+        """Helper to load/unload LoRA based on lora_info"""
+        if not handler:
+            return
+
+        if lora_info and lora_info.get("path"):
+            path = lora_info["path"]
+            scale = lora_info.get("scale", 1.0)
+            
+            # If a different LoRA is loaded? load_lora handles replacement usually?
+            # AceStepHandler implementation of load_lora: "Restore base decoder before loading new LoRA"
+            # So just calling load_lora works fine.
+            
+            # Optimization: check if same LoRA is already loaded? 
+            # Handler doesn't track current path.
+            # We'll just load it. It handles unloading internally.
+            
+            print(f"[initialize_handlers] Loading LoRA: {path} (scale: {scale})")
+            handler.load_lora(path)
+            handler.set_lora_scale(scale)
+        else:
+            # Ensure no LoRA is loaded if not requested
+            if handler.lora_loaded:
+                print(f"[initialize_handlers] Unloading LoRA")
+                handler.unload_lora()
 
 
 class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
@@ -337,7 +394,9 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 "shift": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 5.0}),
                 "thinking": ("BOOLEAN", {"default": True}),
                 "lm_temperature": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 2.0}),
+                "lm_temperature": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 2.0}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
+                "lora_info": ("ACE_STEP_LORA_INFO",),
             },
         }
 
@@ -369,6 +428,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         thinking: bool = True,
         lm_temperature: float = 0.85,
         audio_format: str = "flac",
+        lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str]:
         # Clear CUDA cache before generation to prevent OOM
         if torch.cuda.is_available():
@@ -380,6 +440,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             config_path=config_path,
             lm_model_path=lm_model_path,
             device=device,
+            lora_info=lora_info,
         )
 
         # Prepare generation parameters
@@ -468,7 +529,9 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
             "optional": {
                 "lyrics": ("STRING", {"default": "", "multiline": True}),
                 "thinking": ("BOOLEAN", {"default": True}),
+                "thinking": ("BOOLEAN", {"default": True}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
+                "lora_info": ("ACE_STEP_LORA_INFO",),
             },
         }
 
@@ -492,6 +555,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
         lyrics: str = "",
         thinking: bool = True,
         audio_format: str = "flac",
+        lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str]:
         import tempfile
 
@@ -514,6 +578,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 config_path=config_path,
                 lm_model_path=lm_model_path,
                 device=device,
+                lora_info=lora_info,
             )
 
             # Prepare generation parameters
@@ -598,7 +663,9 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
             },
             "optional": {
                 "thinking": ("BOOLEAN", {"default": True}),
+                "thinking": ("BOOLEAN", {"default": True}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
+                "lora_info": ("ACE_STEP_LORA_INFO",),
             },
         }
 
@@ -621,6 +688,7 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
         device: str,
         thinking: bool = True,
         audio_format: str = "flac",
+        lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str]:
         import tempfile
 
@@ -643,6 +711,7 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 config_path=config_path,
                 lm_model_path=lm_model_path,
                 device=device,
+                lora_info=lora_info,
             )
 
             # Prepare generation parameters
@@ -728,7 +797,9 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
                 "instrumental": ("BOOLEAN", {"default": False}),
                 "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto"}),
                 "thinking": ("BOOLEAN", {"default": True}),
+                "thinking": ("BOOLEAN", {"default": True}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
+                "lora_info": ("ACE_STEP_LORA_INFO",),
             },
         }
 
@@ -751,6 +822,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         vocal_language: str = "auto",
         thinking: bool = True,
         audio_format: str = "flac",
+        lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str, str]:
         # Clear CUDA cache before generation to prevent OOM
         if torch.cuda.is_available():
@@ -762,6 +834,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             config_path=config_path,
             lm_model_path=lm_model_path,
             device=device,
+            lora_info=lora_info,
         )
 
         # Step 1: Create sample from description
@@ -1050,6 +1123,33 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
 
 
 
+class ACE_STEP_LORA_LOADER:
+    """Load PEFT LoRA for ACE-Step"""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "lora_path": (get_available_peft_loras(), {"default": "None"}),
+                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 5.0, "step": 0.1}),
+            }
+        }
+
+    RETURN_TYPES = ("ACE_STEP_LORA_INFO",)
+    RETURN_NAMES = ("lora_info",)
+    FUNCTION = "load_lora_config"
+    CATEGORY = "Audio/ACE-Step"
+
+    def load_lora_config(self, lora_path, strength):
+        if lora_path == "None" or not lora_path:
+            return (None,)
+            
+        return ({
+            "path": lora_path,
+            "scale": strength
+        },)
+
+
 # Node mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
     "ACE_STEP_TextToMusic": ACE_STEP_TEXT_TO_MUSIC,
@@ -1058,6 +1158,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_STEP_SimpleMode": ACE_STEP_SIMPLE_MODE,
     "ACE_STEP_FormatSample": ACE_STEP_FORMAT_SAMPLE,
     "ACE_STEP_Understand": ACE_STEP_UNDERSTAND,
+    "ACE_STEP_LoRALoader": ACE_STEP_LORA_LOADER,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1067,4 +1168,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_SimpleMode": "ACE-Step Simple Mode",
     "ACE_STEP_FormatSample": "ACE-Step Format Sample",
     "ACE_STEP_Understand": "ACE-Step Understand",
+    "ACE_STEP_LoRALoader": "ACE-Step LoRA Loader",
 }
