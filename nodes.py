@@ -43,7 +43,8 @@ import tempfile
 import soundfile as sf
 from typing import Dict, List, Optional, Tuple, Any
 import folder_paths
-from transformers import AutoModel
+from transformers import AutoModel, AutoTokenizer
+from diffusers.models import AutoencoderOobleck
 
 comfy_path = folder_paths.__file__.replace("__init__.py", "")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "acestep_repo"))
@@ -684,7 +685,44 @@ class ACE_STEP_BASE:
 
                 quantize_(dit_handler.model, quant_config)
 
-        print(f"[ACE_STEP] DiT model loaded successfully")
+        # Load silence_latent (required for padding and text2music)
+        silence_latent_path = os.path.join(model_path, "silence_latent.pt")
+        if os.path.exists(silence_latent_path):
+            dit_handler.silence_latent = torch.load(silence_latent_path).transpose(1, 2)
+            dit_handler.silence_latent = dit_handler.silence_latent.to(device).to(dit_handler.dtype)
+            print(f"[ACE_STEP] Loaded silence_latent from: {silence_latent_path}")
+        else:
+            raise RuntimeError(f"Silence latent not found at {silence_latent_path}")
+
+        # Load VAE (required for audio encoding/decoding)
+        vae_path = os.path.join(checkpoint_dir, "vae")
+        if os.path.exists(vae_path):
+            dit_handler.vae = AutoencoderOobleck.from_pretrained(vae_path)
+            vae_dtype = torch.bfloat16 if device in ["cuda", "xpu", "mps"] else torch.float32
+            if not offload_to_cpu:
+                dit_handler.vae = dit_handler.vae.to(device).to(vae_dtype)
+            else:
+                dit_handler.vae = dit_handler.vae.to("cpu").to(vae_dtype)
+            dit_handler.vae.eval()
+            print(f"[ACE_STEP] Loaded VAE from: {vae_path}")
+        else:
+            raise RuntimeError(f"VAE not found at {vae_path}")
+
+        # Load text encoder and tokenizer (required for text input processing)
+        text_encoder_path = os.path.join(checkpoint_dir, "Qwen3-Embedding-0.6B")
+        if os.path.exists(text_encoder_path):
+            dit_handler.text_tokenizer = AutoTokenizer.from_pretrained(text_encoder_path)
+            dit_handler.text_encoder = AutoModel.from_pretrained(text_encoder_path)
+            if not offload_to_cpu:
+                dit_handler.text_encoder = dit_handler.text_encoder.to(device).to(dit_handler.dtype)
+            else:
+                dit_handler.text_encoder = dit_handler.text_encoder.to("cpu").to(dit_handler.dtype)
+            dit_handler.text_encoder.eval()
+            print(f"[ACE_STEP] Loaded text encoder from: {text_encoder_path}")
+        else:
+            raise RuntimeError(f"Text encoder not found at {text_encoder_path}")
+
+        print(f"[ACE_STEP] DiT handler initialized successfully")
 
 
 class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
