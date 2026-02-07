@@ -181,37 +181,26 @@ if ACESTEP_AVAILABLE:
 
     import acestep.inference
     _original_generate_music = acestep.inference.generate_music
-    def patched_generate_music(params, dit_handler, llm_handler=None, **kwargs):
+    def patched_generate_music(dit_handler, llm_handler, params, config, **kwargs):
+        # Bridge vocal_language and instrumental to llm_handler for prompt building
         if llm_handler is not None:
             llm_handler._patch_vocal_language = params.vocal_language
             llm_handler._patch_instrumental = params.instrumental
             
         # Fix: Seed handling in upstream is sensitive to int vs list
-        # We ensure it's a string if it's an int, to avoid len(config.seeds) crash in upstream
-        # Actually, let's fix the call params if they exist
-        config = kwargs.get('config')
         if config and hasattr(config, 'seeds'):
              if isinstance(config.seeds, int):
-                  # We can't easily change the class definition but we can modify the instance 
-                  # before it's used in the upstream function
-                  # However, upstream does `if isinstance(config.seeds, list)`.
-                  # If we change it to a list, it should work fine.
                   config.seeds = [config.seeds]
         
         # Sampling parameters extraction
-        # Since we removed them from upstream GenerationParams, we might need to handle them here
-        # IF they are being passed through params.
-        # Check if params has these attributes (to avoid AttributeError)
         lm_top_k = getattr(params, 'lm_top_k', None)
         lm_top_p = getattr(params, 'lm_top_p', None)
         
-        # If upstream llm_handler.generate_with_stop_condition doesn't support them anymore,
-        # we might need to bridge them via attributes on llm_handler too.
         if llm_handler is not None:
             llm_handler._patch_top_k = lm_top_k
             llm_handler._patch_top_p = lm_top_p
 
-        return _original_generate_music(params, dit_handler, llm_handler, **kwargs)
+        return _original_generate_music(dit_handler, llm_handler, params, config, **kwargs)
     
     acestep.inference.generate_music = patched_generate_music
 
