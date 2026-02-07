@@ -52,7 +52,7 @@ try:
     from acestep.llm_inference import LLMHandler
     import acestep.inference as acestep_inference
     from acestep.inference import (
-        GenerationParams,
+        GenerationParams,   
         GenerationConfig,
         create_sample,
         format_sample,
@@ -123,123 +123,66 @@ if ACESTEP_AVAILABLE:
     # --------------------------------------------------------------------------------
     # MonkeyPatch LLM and Inference to fix missing lyrics issue
     # --------------------------------------------------------------------------------
-    _original_build_formatted_prompt = LLMHandler.build_formatted_prompt
-    def patched_build_formatted_prompt(self, caption: str, lyrics: str = "", *args, **kwargs):
-        vocal_language = getattr(self, '_patch_vocal_language', None)
-        instrumental = getattr(self, '_patch_instrumental', False)
-        
-        print(f"[MONKEY PATCH DEBUG] build_formatted_prompt called: vocal_language={vocal_language}, instrumental={instrumental}")
-        
-        # Check if is_negative_prompt is passed as pos arg or kwarg
-        is_negative_prompt = kwargs.get('is_negative_prompt', False)
-        if len(args) > 0: is_negative_prompt = args[0]
-        
-        if not is_negative_prompt:
-            from acestep.constants import DEFAULT_LM_INSTRUCTION
-            instrumental_str = "true" if instrumental else "false"
-            prompt = f"# Caption\n{caption}\n\ninstrumental: {instrumental_str}"
-            if vocal_language and vocal_language.strip() and vocal_language.strip().lower() != "unknown":
-                prompt += f"\nlanguage: {vocal_language.strip()}"
-            prompt += f"\n\n# Lyric\n{lyrics}\n"
-            
-            print(f"[ACE_STEP] Phase 1 Prompt:\n{prompt}")
-            
-            return self.llm_tokenizer.apply_chat_template(
-                [
-                    {"role": "system", "content": f"# Instruction\n{DEFAULT_LM_INSTRUCTION}\n\n"},
-                    {"role": "user", "content": prompt},
-                ],
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-        return _original_build_formatted_prompt(self, caption, lyrics, *args, **kwargs)
+    # MonkeyPatch LLM and Inference to fix missing lyrics and language consistency
+    # --------------------------------------------------------------------------------
     
-    LLMHandler.build_formatted_prompt = patched_build_formatted_prompt
-
-    _original_build_formatted_prompt_with_cot = LLMHandler.build_formatted_prompt_with_cot
-    def patched_build_formatted_prompt_with_cot(self, caption: str, lyrics: str, cot_text: str, *args, **kwargs):
-        vocal_language = getattr(self, '_patch_vocal_language', None)
-        instrumental = getattr(self, '_patch_instrumental', False)
-        
-        is_negative_prompt = kwargs.get('is_negative_prompt', False)
-        if len(args) > 0: is_negative_prompt = args[0]
-        
-        if not is_negative_prompt:
-            from acestep.constants import DEFAULT_LM_INSTRUCTION
-            instrumental_str = "true" if instrumental else "false"
-            user_prompt = f"# Caption\n{caption}\n\ninstrumental: {instrumental_str}"
-            if vocal_language and vocal_language.strip() and vocal_language.strip().lower() != "unknown":
-                user_prompt += f"\nlanguage: {vocal_language.strip()}"
-            user_prompt += f"\n\n# Lyric\n{lyrics}\n"
-            
-            return self.llm_tokenizer.apply_chat_template(
-                [
-                    {"role": "system", "content": f"# Instruction\n{DEFAULT_LM_INSTRUCTION}\n\n"},
-                    {"role": "user", "content": user_prompt},
-                    {"role": "assistant", "content": cot_text},
-                ],
-                tokenize=False,
-                add_generation_prompt=False,
-            )
-        return _original_build_formatted_prompt_with_cot(self, caption, lyrics, cot_text, *args, **kwargs)
-    
-    LLMHandler.build_formatted_prompt_with_cot = patched_build_formatted_prompt_with_cot
-
+    # 1. Patch generate_music to handle instrumental logic and bridge params
     import acestep.inference
     _original_generate_music = acestep.inference.generate_music
     def patched_generate_music(dit_handler, llm_handler, params, config, **kwargs):
-        # Bridge vocal_language and instrumental to llm_handler for prompt building
+        # Handle instrumental -> lyrics convention
+        # If instrumental is True, we force lyrics to be "[Instrumental]"
+        # This aligns with upstream logic (often implicit) for instrumental generation
+        if params.instrumental:
+            print(f"[ACE_STEP] Instrumental mode: Setting lyrics to '[Instrumental]'")
+            params.lyrics = "[Instrumental]"
+
+        # Bridge vocal_language to llm_handler for use in generate_with_stop_condition
         if llm_handler is not None:
+            # We bridge this so generate_with_stop_condition can use it
             llm_handler._patch_vocal_language = params.vocal_language
-            llm_handler._patch_instrumental = params.instrumental
-            print(f"[MONKEY PATCH DEBUG] generate_music: setting _patch_vocal_language={params.vocal_language}, _patch_instrumental={params.instrumental}")
+            
+            # Bridge sampling params
+            lm_top_k = getattr(params, 'lm_top_k', None)
+            lm_top_p = getattr(params, 'lm_top_p', None)
+            llm_handler._patch_top_k = lm_top_k
+            llm_handler._patch_top_p = lm_top_p
         
-        # When CoT is disabled, manually add instrumental and language to caption
-        # because the LLM won't do it for us
-        use_cot = getattr(params, 'use_cot_caption', True) or getattr(params, 'thinking', True)
-        if not use_cot:
-            # Add instrumental and language info to caption for DiT
-            instrumental_str = "true" if params.instrumental else "false"
-            language_str = params.vocal_language if params.vocal_language else "unknown"
-            
-            # Append to caption
-            caption_suffix = f"\n\ninstrumental: {instrumental_str}\nlanguage: {language_str}"
-            params.caption = params.caption + caption_suffix
-            print(f"[MONKEY PATCH DEBUG] CoT disabled - appended to caption: instrumental={instrumental_str}, language={language_str}")
-            
-        # Sampling parameters extraction
-        lm_top_k = getattr(params, 'lm_top_k', None)
-        lm_top_p = getattr(params, 'lm_top_p', None)
         lm_temp = getattr(params, 'lm_temperature', 0.0)
         
         print(f"[ACE_STEP] Generation Start:")
         print(f"  - Task: {params.task_type}")
         print(f"  - Language: {params.vocal_language}")
         print(f"  - Instrumental: {params.instrumental}")
-        print(f"  - LLM Config: temp={lm_temp}, top_k={lm_top_k}, top_p={lm_top_p}")
+        print(f"  - LLM Config: temp={lm_temp}, top_k={getattr(params, 'lm_top_k', None)}, top_p={getattr(params, 'lm_top_p', None)}")
+        
         if config and hasattr(config, 'seeds'):
              if isinstance(config.seeds, int):
                   config.seeds = [config.seeds]
 
-        if llm_handler is not None:
-            llm_handler._patch_top_k = lm_top_k
-            llm_handler._patch_top_p = lm_top_p
-
         print(f"  - DiT Config: steps={params.inference_steps}, seed={config.seeds}")
-        print(f"[ACE_STEP] Generation End.")
         return _original_generate_music(dit_handler, llm_handler, params, config, **kwargs)
  
-    
     acestep.inference.generate_music = patched_generate_music
     # CRITICAL: Update module-level reference to use patched version
     generate_music = patched_generate_music
 
-    # --------------------------------------------------------------------------------
-    # MonkeyPatch LLMHandler.generate_with_stop_condition
-    # --------------------------------------------------------------------------------
+    # 2. Patch generate_with_stop_condition to inject vocal_language into user_metadata
     _original_generate_with_stop_condition = LLMHandler.generate_with_stop_condition
     def patched_generate_with_stop_condition(self, caption: str, lyrics: str, *args, **kwargs):
-        # Use bridged attributes if they were set by patched_generate_music or create_sample
+        # Inject vocal_language into user_metadata
+        vocal_language = getattr(self, '_patch_vocal_language', None)
+        if vocal_language and vocal_language != 'unknown':
+            user_metadata = kwargs.get('user_metadata', {})
+            # user_metadata can be None coming from upstream
+            if user_metadata is None: user_metadata = {}
+            
+            if 'language' not in user_metadata:
+                print(f"[MONKEY PATCH] Injecting language '{vocal_language}' into user_metadata")
+                user_metadata['language'] = vocal_language
+                kwargs['user_metadata'] = user_metadata
+        
+        # Bridge sampling params
         top_k = getattr(self, '_patch_top_k', None)
         top_p = getattr(self, '_patch_top_p', None)
         
@@ -250,8 +193,10 @@ if ACESTEP_AVAILABLE:
             kwargs['top_p'] = top_p
             
         return _original_generate_with_stop_condition(self, caption, lyrics, *args, **kwargs)
-        
+
     LLMHandler.generate_with_stop_condition = patched_generate_with_stop_condition
+
+
 
     # --------------------------------------------------------------------------------
     # MonkeyPatch LLMHandler
