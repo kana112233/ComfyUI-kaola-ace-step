@@ -338,20 +338,51 @@ class ACEStepWrapper:
         print(f"  ✓ Generated silence_latent (shape: {self.silence_latent.shape})")
 
     def _ensure_split_models(self, checkpoint_dir: str, prefer_source: Optional[str] = None):
-        """Ensure split format models are downloaded"""
-        # For split format, we would download from Comfy-Org repository
-        # This would require implementing the download logic
-        # For now, just check existence
-        checkpoint_path = Path(checkpoint_dir)
+        """Ensure split format models exist
 
+        Checks for all required files:
+        - diffusion_models/acestep_v1.5_turbo.safetensors
+        - vae/ace_1.5_vae.safetensors
+        - text_encoders/qwen_*_ace15.safetensors (0.6B or 1.7B)
+
+        Format from: https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files
+        """
+        checkpoint_path = Path(checkpoint_dir)
+        missing_files = []
+
+        # Check DiT model
         dit_path = checkpoint_path / "diffusion_models" / "acestep_v1.5_turbo.safetensors"
         if not dit_path.exists():
-            print(f"\n[ACE_STEP] Split format model not found at: {dit_path}")
-            print(f"[ACE_STEP] To download, use:")
-            print(f"  huggingface-cli download Comfy-Org/ace_step_1.5_ComfyUI_files \\")
-            print(f"    split_files/diffusion_models/acestep_v1.5_turbo.safetensors \\")
-            print(f"    --local-dir {checkpoint_dir}/diffusion_models/")
-            raise RuntimeError(f"Please download the split format models first")
+            missing_files.append(("DiT", dit_path, "split_files/diffusion_models/acestep_v1.5_turbo.safetensors"))
+
+        # Check VAE
+        vae_path = checkpoint_path / "vae" / "ace_1.5_vae.safetensors"
+        if not vae_path.exists():
+            missing_files.append(("VAE", vae_path, "split_files/vae/ace_1.5_vae.safetensors"))
+
+        # Check text encoder (0.6B or 1.7B)
+        text_enc_dir = checkpoint_path / "text_encoders"
+        text_enc_06b = text_enc_dir / "qwen_0.6b_ace15.safetensors"
+        text_enc_17b = text_enc_dir / "qwen_1.7b_ace15.safetensors"
+
+        if not text_enc_06b.exists() and not text_enc_17b.exists():
+            missing_files.append(("Text Encoder", text_enc_06b, "split_files/text_encoders/qwen_1.7b_ace15.safetensors"))
+
+        # Report missing files
+        if missing_files:
+            print(f"\n[ACE_STEP] Missing split format models:")
+            for name, path, remote_path in missing_files:
+                print(f"  ✗ {name}: {path}")
+
+            print(f"\n[ACE_STEP] To download, use:")
+            for name, path, remote_path in missing_files:
+                print(f"  huggingface-cli download Comfy-Org/ace_step_1.5_ComfyUI_files \\")
+                print(f"    {remote_path} \\")
+                print(f"    --local-dir {checkpoint_dir}/{remote_path.split('/')[0]}/")
+
+            raise RuntimeError(f"Missing {len(missing_files)} required model file(s). Please download split format models first.")
+
+        print(f"[ACE_STEP] ✓ All split format models found")
 
     def _ensure_standard_models(self, checkpoint_dir: str, config_path: str, prefer_source: Optional[str] = None):
         """Ensure standard format models are downloaded"""

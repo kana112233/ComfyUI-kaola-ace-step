@@ -605,6 +605,8 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         inference_steps: int,
         device: str,
         model: Optional = None,
+        prefer_download_source: str = "auto",
+        lora_info: Optional[Dict[str, Any]] = None,
         lyrics: str = "",
         bpm: int = 0,
         keyscale: str = "",
@@ -618,8 +620,6 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         quantization: str = "None",
         compile_model: bool = False,
         audio_format: str = "flac",
-        prefer_download_source: str = "auto",
-        lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str]:
         # Clear CUDA cache before generation to prevent OOM
         if torch.cuda.is_available():
@@ -746,6 +746,8 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 "timesignature": ("STRING", {"default": "", "tooltip": "Time signature."}),
                 "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Show LLM reasoning."}),
+                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
+                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output format."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA style model."}),
                 "instruction": ("STRING", {"default": "", "multiline": True, "tooltip": "Custom instruction (overrides default cover instruction)."}),
@@ -768,10 +770,10 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
         batch_size: int,
         seed: int,
         inference_steps: int,
-        device: str,
+        guidance_scale: float = 7.0,
+        device: str = "auto",
         model: Optional = None,
-        quantization: str = "None",
-        compile_model: bool = False,
+        prefer_download_source: str = "auto",
         lyrics: str = "",
         vocal_language: str = "unknown",
         instrumental: bool = False,
@@ -779,8 +781,9 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
         keyscale: str = "",
         timesignature: str = "",
         use_adg: bool = False,
-        guidance_scale: float = 7.0,
         thinking: bool = True,
+        quantization: str = "None",
+        compile_model: bool = False,
         audio_format: str = "flac",
         lora_info: Optional[Dict[str, Any]] = None,
         instruction: str = "",
@@ -817,6 +820,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                     lora_info=lora_info,
                     quantization=quantization,
                     compile_model=compile_model,
+                    prefer_source=None if prefer_download_source == "auto" else prefer_download_source,
                 )
 
             # Auto-set instruction for cover task
@@ -943,11 +947,10 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
         inference_steps: int,
         device: str,
         model: Optional = None,
+        thinking: bool = True,
         quantization: str = "None",
         compile_model: bool = False,
-        thinking: bool = True,
         audio_format: str = "flac",
-        lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str]:
         import tempfile
 
@@ -1100,11 +1103,10 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         inference_steps: int,
         device: str,
         model: Optional = None,
-        quantization: str = "None",
-        compile_model: bool = False,
         instrumental: bool = False,
         vocal_language: str = "unknown",
-        bpm: int = 120,
+        quantization: str = "None",
+        compile_model: bool = False,
         thinking: bool = True,
         audio_format: str = "flac",
         lora_info: Optional[Dict[str, Any]] = None,
