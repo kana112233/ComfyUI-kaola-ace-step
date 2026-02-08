@@ -653,6 +653,36 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 prefer_source=None if prefer_download_source == "auto" else prefer_download_source,
             )
 
+        # Check if LM is required
+        # LM is needed when: lyrics need generation, or metadata needs generation, or thinking is enabled
+        needs_lm = (
+            (not lyrics and not instrumental) or  # Need to generate lyrics
+            bpm == 0 or  # Need to detect BPM
+            not keyscale or  # Need to generate key
+            thinking  # Need CoT reasoning
+        )
+        if needs_lm and not getattr(llm_handler, 'llm_initialized', False):
+            raise ValueError(
+                "LM (Language Model) is required for this operation but not provided.\n"
+                "Please add an 'ACE_STEP_LM_Loader' node and connect its output to the 'lm' input.\n"
+                "LM is needed because:\n"
+                f"  - Lyrics: {'will be generated' if not lyrics and not instrumental else 'provided or instrumental'}\n"
+                f"  - BPM: {'will be detected' if bpm == 0 else 'provided'}\n"
+                f"  - Key: {'will be generated' if not keyscale else 'provided'}\n"
+                f"  - Thinking: {'enabled' if thinking else 'disabled'}\n"
+                "\n"
+                "To fix:\n"
+                "  1. Add 'ACE_STEP_LM_Loader' node\n"
+                "  2. Set lm_model_path (e.g., 'acestep-5Hz-lm-1.7B')\n"
+                "  3. Connect LM_Loader output to the 'lm' input\n"
+                "\n"
+                "Or if you don't need LM features:\n"
+                "  - Set 'instrumental': True (no vocals/lyrics)\n"
+                "  - Provide explicit 'bpm' value\n"
+                "  - Provide explicit 'keyscale' value\n"
+                "  - Set 'thinking': False"
+            )
+
         # Prepare generation parameters
         params = create_generation_params(
             task_type="text2music",
@@ -814,7 +844,11 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
             if model is not None:
                 # Skip loading, use the pre-loaded handlers
                 dit_handler = model.dit_handler
-                llm_handler = model.llm_handler
+                # Use separate LM if provided, otherwise use model's LM
+                if lm is not None:
+                    llm_handler = lm.llm_handler
+                else:
+                    llm_handler = model.llm_handler
                 # Update LoRA state if needed
                 self._update_lora_state(dit_handler, lora_info)
             else:
@@ -827,6 +861,19 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                     quantization=quantization,
                     compile_model=compile_model,
                     prefer_source=None if prefer_download_source == "auto" else prefer_download_source,
+                )
+
+            # Check if LM is required
+            needs_lm = (
+                (not lyrics and not instrumental) or  # Need to generate lyrics
+                bpm == 0 or  # Need to detect BPM
+                not keyscale or  # Need to generate key
+                thinking  # Need CoT reasoning
+            )
+            if needs_lm and not getattr(llm_handler, 'llm_initialized', False):
+                raise ValueError(
+                    "LM (Language Model) is required for Cover generation but not provided.\n"
+                    "Please add an 'ACE_STEP_LM_Loader' node and connect its output to the 'lm' input."
                 )
 
             # Auto-set instruction for cover task
@@ -976,7 +1023,11 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
             if model is not None:
                 # Skip loading, use the pre-loaded handlers
                 dit_handler = model.dit_handler
-                llm_handler = model.llm_handler
+                # Use separate LM if provided, otherwise use model's LM
+                if lm is not None:
+                    llm_handler = lm.llm_handler
+                else:
+                    llm_handler = model.llm_handler
                 # Update LoRA state if needed
                 self._update_lora_state(dit_handler, lora_info)
             else:
@@ -988,6 +1039,14 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                     lora_info=lora_info,
                     quantization=quantization,
                     compile_model=compile_model,
+                )
+
+            # Check if LM is required (repaint always needs LM for CoT reasoning)
+            if thinking and not getattr(llm_handler, 'llm_initialized', False):
+                raise ValueError(
+                    "LM (Language Model) is required for Repaint with thinking=True but not provided.\n"
+                    "Please add an 'ACE_STEP_LM_Loader' node and connect its output to the 'lm' input.\n"
+                    "Or set 'thinking': False to disable LM reasoning."
                 )
 
             # Auto-set instruction for repaint task
@@ -1080,6 +1139,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             },
             "optional": {
                 "model": ("ACE_STEP_MODEL", {"tooltip": "Optional pre-loaded model from TypeAdapter or ModelLoader. If provided, checkpoint loading will be skipped."}),
+                "lm": ("ACE_STEP_LM", {"tooltip": "Optional LM from LM_Loader node. Required for lyrics/metadata generation. Leave disconnected to skip LM loading (saves VRAM)."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
                 "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
                 "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
@@ -1122,7 +1182,11 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         if model is not None:
             # Skip loading, use the pre-loaded handlers
             dit_handler = model.dit_handler
-            llm_handler = model.llm_handler
+            # Use separate LM if provided, otherwise use model's LM
+            if lm is not None:
+                llm_handler = lm.llm_handler
+            else:
+                llm_handler = model.llm_handler
             # Update LoRA state if needed
             self._update_lora_state(dit_handler, lora_info)
         else:
@@ -1134,6 +1198,14 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
                 lora_info=lora_info,
                 quantization=quantization,
                 compile_model=compile_model,
+            )
+
+        # SimpleMode always requires LM for create_sample
+        if not getattr(llm_handler, 'llm_initialized', False):
+            raise ValueError(
+                "LM (Language Model) is required for SimpleMode but not provided.\n"
+                "SimpleMode needs LM to generate music metadata (caption, lyrics, BPM, key, duration) from your description.\n"
+                "Please add an 'ACE_STEP_LM_Loader' node and connect its output to the 'lm' input."
             )
 
         # Step 1: Create sample from description
