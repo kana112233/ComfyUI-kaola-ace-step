@@ -1730,7 +1730,6 @@ class ACE_STEP_LM_LOADER:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step models."}),
                 "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model to load."}),
                 "device": (DEVICES, {"default": "auto", "tooltip": "Device to use."}),
             },
@@ -1746,7 +1745,6 @@ class ACE_STEP_LM_LOADER:
 
     def load_lm(
         self,
-        checkpoint_dir: str,
         lm_model_path: str,
         device: str,
         offload_to_cpu: bool = False,
@@ -1754,8 +1752,7 @@ class ACE_STEP_LM_LOADER:
         """Load ACE-Step Language Model
 
         Args:
-            checkpoint_dir: Directory containing ACE-Step models
-            lm_model_path: Path to the LM model
+            lm_model_path: Name of the LM model (e.g., 'acestep-5Hz-lm-1.7B')
             device: Device to use
             offload_to_cpu: Whether to offload to CPU
 
@@ -1774,7 +1771,8 @@ class ACE_STEP_LM_LOADER:
             device = self.auto_detect_device()
             print(f"[ACE_STEP_LM] Auto-detected device: {device}")
 
-        # Resolve checkpoint path
+        # Get checkpoint directory from ComfyUI
+        checkpoint_dir = get_acestep_checkpoints()[0]
         checkpoint_dir = resolve_checkpoint_path(checkpoint_dir)
 
         print(f"[ACE_STEP_LM] Loading language model from: {checkpoint_dir}")
