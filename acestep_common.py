@@ -58,9 +58,12 @@ def get_acestep_checkpoints() -> List[str]:
 
 
 def get_acestep_models() -> List[str]:
-    """Get available ACE-Step model names"""
+    """Get available ACE-Step model names
+
+    Returns list with "None" as first option to allow skipping LM loading.
+    """
     paths = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)
-    models = []
+    models = ["None"]  # Add None as first option for skipping LM
 
     for p in paths:
         if os.path.exists(p):
@@ -79,7 +82,7 @@ def get_acestep_models() -> List[str]:
         if d not in models:
             models.append(d)
 
-    return models if models else defaults
+    return models
 
 
 def get_available_peft_loras() -> List[str]:

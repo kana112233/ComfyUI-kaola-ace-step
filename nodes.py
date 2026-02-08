@@ -449,20 +449,25 @@ class ACE_STEP_BASE:
                 prefer_source=prefer_source,
             )
             print(f"[ACE_STEP] DiT service initialized. Quantization: {self.dit_handler.quantization}")
+
             # Initialize LLM handler (pass dtype from DiT handler)
-            # Use "pt" backend instead of "vllm" to avoid process group conflicts with ComfyUI
-            self.llm_handler = LLMHandler()
-            llm_status, llm_success = self.llm_handler.initialize(
-                checkpoint_dir=checkpoint_dir,
-                lm_model_path=lm_model_path,
-                backend="pt",  # Use PyTorch backend to avoid vLLM conflicts
-                device=device,
-                offload_to_cpu=offload_to_cpu,
-                dtype=self.dit_handler.dtype,  # Critical: pass dtype from DiT handler
-            )
-            print(f"[ACE_STEP] LLM handler init: {llm_status}")
-            if not llm_success:
-                raise RuntimeError(f"LLM initialization failed: {llm_status}")
+            # Skip LM loading if lm_model_path is "None"
+            if lm_model_path == "None":
+                self.llm_handler = None
+                print(f"[ACE_STEP] LM loading skipped (lm_model_path=None)")
+            else:
+                self.llm_handler = LLMHandler()
+                llm_status, llm_success = self.llm_handler.initialize(
+                    checkpoint_dir=checkpoint_dir,
+                    lm_model_path=lm_model_path,
+                    backend="pt",  # Use PyTorch backend to avoid vLLM conflicts
+                    device=device,
+                    offload_to_cpu=offload_to_cpu,
+                    dtype=self.dit_handler.dtype,  # Critical: pass dtype from DiT handler
+                )
+                print(f"[ACE_STEP] LLM handler init: {llm_status}")
+                if not llm_success:
+                    raise RuntimeError(f"LLM initialization failed: {llm_status}")
 
             # Apply LoRA for fresh handler
             self._update_lora_state(self.dit_handler, lora_info)
@@ -560,7 +565,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Text prompt or natural language description for music generation."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
+                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
                 "duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0, "tooltip": "Target duration of the generated music in seconds."}),
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
@@ -733,7 +738,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Description of the target musical style (e.g., 'A jazz version of this song')."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Model configuration (turbo is faster)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for metadata/lyrics."}),
+                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Language model for metadata/lyrics."}),
                 "audio_cover_strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Strength of preserving original audio structure. Use LOWER (0.1-0.3) for more style change."}),
                 "batch_size": ("INT", {"default": 1, "min": 1, "max": 4, "tooltip": "Number of variations."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFFFFFFFFF, "tooltip": "Random seed."}),
@@ -921,7 +926,7 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0, "tooltip": "End time for the repainting region in seconds. -1 means until the end of the audio."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for processing metadata."}),
+                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for processing metadata."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
@@ -1075,7 +1080,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
                 "query": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language description or prompt for music generation."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
+                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
@@ -1243,7 +1248,7 @@ class ACE_STEP_FORMAT_SAMPLE(ACE_STEP_BASE):
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language description or prompt for music generation."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics to be formatted."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for formatting and enhancement."}),
+                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for formatting and enhancement."}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
@@ -1317,7 +1322,7 @@ class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
             "required": {
                 "query": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language query describing the music you want to generate."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
+                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
@@ -1388,7 +1393,7 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
                 "audio": ("AUDIO", {"tooltip": "The audio signal to be analyzed."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Path to the language model used for audio analysis and understanding."}),
+                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for audio analysis and understanding."}),
                 "target_duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0, "tooltip": "Target duration to reference during analysis."}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
@@ -1561,7 +1566,7 @@ class ACE_STEP_MODEL_LOADER:
             "required": {
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "DiT model configuration (turbo is faster)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for lyrics/metadata."}),
+                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Language model for lyrics/metadata."}),
                 "device": (DEVICES, {"default": "auto", "tooltip": "Device to use."}),
             },
             "optional": {
@@ -1684,7 +1689,7 @@ class ACE_STEP_LM_LOADER:
         return {
             "required": {
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step models."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for lyrics/metadata generation."}),
+                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Language model for lyrics/metadata generation."}),
                 "device": (DEVICES, {"default": "auto", "tooltip": "Device to use."}),
             },
             "optional": {
