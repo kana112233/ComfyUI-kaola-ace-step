@@ -568,6 +568,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
+                "model": ("ACE_STEP_MODEL", {"tooltip": "Optional pre-loaded model from TypeAdapter or ModelLoader. If provided, checkpoint loading will be skipped."}),
                 "prefer_download_source": (["auto", "huggingface", "modelscope"], {"default": "auto", "tooltip": "Preferred source for auto-downloading models: auto (detect best), huggingface, or modelscope."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics. Leave empty for automatic generation by the language model."}),
@@ -603,6 +604,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         seed: int,
         inference_steps: int,
         device: str,
+        model: Optional = None,
         lyrics: str = "",
         bpm: int = 0,
         keyscale: str = "",
@@ -623,17 +625,25 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        # Initialize handlers
-        dit_handler, llm_handler = self.initialize_handlers(
-            checkpoint_dir=checkpoint_dir,
-            config_path=config_path,
-            lm_model_path=lm_model_path,
-            device=device,
-            lora_info=lora_info,
-            quantization=quantization,
-            compile_model=compile_model,
-            prefer_source=None if prefer_download_source == "auto" else prefer_download_source,
-        )
+        # If pre-loaded model is provided, use it directly
+        if model is not None:
+            # Skip loading, use the pre-loaded handlers
+            dit_handler = model.dit_handler
+            llm_handler = model.llm_handler
+            # Update LoRA state if needed
+            self._update_lora_state(dit_handler, lora_info)
+        else:
+            # Load model as usual
+            dit_handler, llm_handler = self.initialize_handlers(
+                checkpoint_dir=checkpoint_dir,
+                config_path=config_path,
+                lm_model_path=lm_model_path,
+                device=device,
+                lora_info=lora_info,
+                quantization=quantization,
+                compile_model=compile_model,
+                prefer_source=None if prefer_download_source == "auto" else prefer_download_source,
+            )
 
         # Prepare generation parameters
         params = create_generation_params(
@@ -726,6 +736,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Processing platform."}),
             },
             "optional": {
+                "model": ("ACE_STEP_MODEL", {"tooltip": "Optional pre-loaded model from TypeAdapter or ModelLoader. If provided, checkpoint loading will be skipped."}),
                 "prefer_download_source": (["auto", "huggingface", "modelscope"], {"default": "auto", "tooltip": "Preferred source for auto-downloading models."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Optional lyrics."}),
                 "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown", "tooltip": "Target language."}),
@@ -758,6 +769,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
         seed: int,
         inference_steps: int,
         device: str,
+        model: Optional = None,
         quantization: str = "None",
         compile_model: bool = False,
         lyrics: str = "",
@@ -788,16 +800,24 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
             sf.write(temp_path, waveform, src_audio["sample_rate"])
 
         try:
-            # Initialize handlers
-            dit_handler, llm_handler = self.initialize_handlers(
-                checkpoint_dir=checkpoint_dir,
-                config_path=config_path,
-                lm_model_path=lm_model_path,
-                device=device,
-                lora_info=lora_info,
-                quantization=quantization,
-                compile_model=compile_model,
-            )
+            # If pre-loaded model is provided, use it directly
+            if model is not None:
+                # Skip loading, use the pre-loaded handlers
+                dit_handler = model.dit_handler
+                llm_handler = model.llm_handler
+                # Update LoRA state if needed
+                self._update_lora_state(dit_handler, lora_info)
+            else:
+                # Load model as usual
+                dit_handler, llm_handler = self.initialize_handlers(
+                    checkpoint_dir=checkpoint_dir,
+                    config_path=config_path,
+                    lm_model_path=lm_model_path,
+                    device=device,
+                    lora_info=lora_info,
+                    quantization=quantization,
+                    compile_model=compile_model,
+                )
 
             # Auto-set instruction for cover task
             # Cover task requires specific instruction for model to recognize the task type
@@ -897,6 +917,7 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
+                "model": ("ACE_STEP_MODEL", {"tooltip": "Optional pre-loaded model from TypeAdapter or ModelLoader. If provided, checkpoint loading will be skipped."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
                 "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
                 "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
@@ -921,6 +942,7 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
         seed: int,
         inference_steps: int,
         device: str,
+        model: Optional = None,
         quantization: str = "None",
         compile_model: bool = False,
         thinking: bool = True,
@@ -942,16 +964,24 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
             sf.write(temp_path, waveform, src_audio["sample_rate"])
 
         try:
-            # Initialize handlers
-            dit_handler, llm_handler = self.initialize_handlers(
-                checkpoint_dir=checkpoint_dir,
-                config_path=config_path,
-                lm_model_path=lm_model_path,
-                device=device,
-                lora_info=lora_info,
-                quantization=quantization,
-                compile_model=compile_model,
-            )
+            # If pre-loaded model is provided, use it directly
+            if model is not None:
+                # Skip loading, use the pre-loaded handlers
+                dit_handler = model.dit_handler
+                llm_handler = model.llm_handler
+                # Update LoRA state if needed
+                self._update_lora_state(dit_handler, lora_info)
+            else:
+                # Load model as usual
+                dit_handler, llm_handler = self.initialize_handlers(
+                    checkpoint_dir=checkpoint_dir,
+                    config_path=config_path,
+                    lm_model_path=lm_model_path,
+                    device=device,
+                    lora_info=lora_info,
+                    quantization=quantization,
+                    compile_model=compile_model,
+                )
 
             # Auto-set instruction for repaint task
             # Repaint task requires specific instruction for model to recognize the task type
@@ -1043,6 +1073,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
+                "model": ("ACE_STEP_MODEL", {"tooltip": "Optional pre-loaded model from TypeAdapter or ModelLoader. If provided, checkpoint loading will be skipped."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
                 "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
                 "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
@@ -1068,6 +1099,7 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         seed: int,
         inference_steps: int,
         device: str,
+        model: Optional = None,
         quantization: str = "None",
         compile_model: bool = False,
         instrumental: bool = False,
@@ -1081,16 +1113,24 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        # Initialize handlers
-        dit_handler, llm_handler = self.initialize_handlers(
-            checkpoint_dir=checkpoint_dir,
-            config_path=config_path,
-            lm_model_path=lm_model_path,
-            device=device,
-            lora_info=lora_info,
-            quantization=quantization,
-            compile_model=compile_model,
-        )
+        # If pre-loaded model is provided, use it directly
+        if model is not None:
+            # Skip loading, use the pre-loaded handlers
+            dit_handler = model.dit_handler
+            llm_handler = model.llm_handler
+            # Update LoRA state if needed
+            self._update_lora_state(dit_handler, lora_info)
+        else:
+            # Load model as usual
+            dit_handler, llm_handler = self.initialize_handlers(
+                checkpoint_dir=checkpoint_dir,
+                config_path=config_path,
+                lm_model_path=lm_model_path,
+                device=device,
+                lora_info=lora_info,
+                quantization=quantization,
+                compile_model=compile_model,
+            )
 
         # Step 1: Create sample from description
         sample_result = create_sample(
@@ -1617,9 +1657,234 @@ class ACE_STEP_MODEL_LOADER:
         return (model,)
 
 
+class ACE_STEP_TYPE_ADAPTER:
+    """Adapt ComfyUI standard types (MODEL, VAE, CLIP) to ACE_STEP_MODEL
+
+    This node allows you to use models loaded through ComfyUI's standard
+    CheckpointLoaderSimple node with ACE-Step generation nodes. It extracts
+    the DiT model, VAE, and CLIP components and packages them into an
+    ACE_STEP_MODEL type compatible with ACE-Step nodes.
+
+    This is useful when you have existing ComfyUI workflows using standard
+    model loaders and want to integrate ACE-Step functionality.
+
+    Note: This adapter requires that the input model is compatible with
+    ACE-Step 1.5 architecture. Standard checkpoint loaders may not provide
+    all required components (e.g., silence_latent), so some components
+    may be generated or initialized with defaults.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("MODEL", {"tooltip": "DiT model from ComfyUI CheckpointLoaderSimple or similar."}),
+                "vae": ("VAE", {"tooltip": "VAE model from ComfyUI CheckpointLoaderSimple."}),
+                "clip": ("CLIP", {"tooltip": "CLIP/Text encoder from ComfyUI CheckpointLoaderSimple."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for lyrics/metadata generation."}),
+                "device": (DEVICES, {"default": "auto", "tooltip": "Device for language model and additional processing."}),
+            },
+            "optional": {
+                "prefer_download_source": (DOWNLOAD_SOURCES, {"default": "auto", "tooltip": "Preferred source for auto-downloading LM model."}),
+                "offload_to_cpu": ("BOOLEAN", {"default": False, "tooltip": "Offload models to CPU when not in use."}),
+                "silence_latent_path": ("STRING", {"default": "", "tooltip": "Optional path to silence_latent.pt file. Leave empty to auto-generate."}),
+            },
+        }
+
+    RETURN_TYPES = ("ACE_STEP_MODEL",)
+    RETURN_NAMES = ("model",)
+    FUNCTION = "adapt_types"
+    CATEGORY = "Audio/ACE-Step"
+
+    def adapt_types(
+        self,
+        model: Any,
+        vae: Any,
+        clip: Any,
+        lm_model_path: str,
+        device: str,
+        prefer_download_source: str = "auto",
+        offload_to_cpu: bool = False,
+        silence_latent_path: str = "",
+    ):
+        """Adapt ComfyUI standard types to ACE_STEP_MODEL
+
+        Args:
+            model: ComfyUI MODEL type (contains .model with DiT)
+            vae: ComfyUI VAE type
+            clip: ComfyUI CLIP type (contains text_encoder and tokenizer)
+            lm_model_path: Path to language model
+            device: Device to use
+            prefer_download_source: Preferred download source for LM
+            offload_to_cpu: Whether to offload to CPU
+            silence_latent_path: Optional path to silence_latent.pt
+
+        Returns:
+            ACE_STEP_MODEL object compatible with ACE-Step nodes
+        """
+        if not ACESTEP_AVAILABLE:
+            raise RuntimeError("ACE-Step is not installed. Please install it first.")
+
+        from acestep.handler import AceStepHandler
+        from acestep.llm_inference import LLMHandler
+        from acestep_wrapper import ACEStepWrapper
+
+        # Auto-detect device
+        if device == "auto":
+            device = self.auto_detect_device()
+            print(f"[ACE_STEP_ADAPTER] Auto-detected device: {device}")
+
+        # Determine checkpoint directory (use ComfyUI models directory)
+        checkpoint_dir = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)[0]
+        full_checkpoint_dir = resolve_checkpoint_path(checkpoint_dir)
+
+        print(f"[ACE_STEP_ADAPTER] Adapting ComfyUI types to ACE-Step format")
+        print(f"[ACE_STEP_ADAPTER] Checkpoint directory: {full_checkpoint_dir}")
+
+        # Extract components from ComfyUI types
+        # MODEL type structure: model.model contains the actual model
+        dit_model = None
+        if hasattr(model, 'model'):
+            dit_model = model.model
+        elif hasattr(model, 'diffusion_model'):
+            dit_model = model.diffusion_model
+        else:
+            raise RuntimeError(
+                "Unable to extract DiT model from input MODEL type. "
+                "The input should be from CheckpointLoaderSimple or similar node."
+            )
+
+        # VAE type structure
+        vae_model = None
+        if hasattr(vae, 'first_stage_model'):
+            vae_model = vae.first_stage_model
+        elif hasattr(vae, 'vae'):
+            vae_model = vae.vae
+        else:
+            # VAE might be passed directly
+            vae_model = vae
+
+        # CLIP type structure - contains cond_stage_model or similar
+        text_encoder = None
+        text_tokenizer = None
+
+        if hasattr(clip, 'cond_stage_model'):
+            text_encoder = clip.cond_stage_model
+        elif hasattr(clip, 'clip_h'):
+            # Some implementations use clip_h for text encoder
+            text_encoder = clip.clip_h
+        elif hasattr(clip, 'model'):
+            text_encoder = clip.model
+
+        # Try to get tokenizer from CLIP
+        if hasattr(clip, 'tokenizer'):
+            text_tokenizer = clip.tokenizer
+        elif hasattr(clip, 'tokenization'):
+            text_tokenizer = clip.tokenization
+
+        # Create AceStepHandler and populate with extracted components
+        dit_handler = AceStepHandler()
+
+        # Set the model
+        dit_handler.model = dit_model
+        print(f"[ACE_STEP_ADAPTER] DiT model extracted: {type(dit_model).__name__}")
+
+        # Set VAE
+        dit_handler.vae = vae_model
+        print(f"[ACE_STEP_ADAPTER] VAE extracted: {type(vae_model).__name__}")
+
+        # Set text encoder and tokenizer
+        dit_handler.text_encoder = text_encoder
+        dit_handler.text_tokenizer = text_tokenizer
+        print(f"[ACE_STEP_ADAPTER] Text encoder: {type(text_encoder).__name__ if text_encoder else 'None'}")
+        print(f"[ACE_STEP_ADAPTER] Tokenizer: {type(text_tokenizer).__name__ if text_tokenizer else 'None'}")
+
+        # Set device and dtype
+        dit_handler.device = device
+        dit_handler.dtype = torch.bfloat16 if device in ["cuda", "xpu"] else torch.float32
+        dit_handler.offload_to_cpu = offload_to_cpu
+
+        # Set config from model if available
+        if hasattr(dit_model, 'config'):
+            dit_handler.config = dit_model.config
+        else:
+            # Create a minimal config
+            dit_handler.config = type('obj', (object,), {
+                'hidden_size': getattr(dit_model, 'hidden_size', 2048),
+                'num_attention_heads': getattr(dit_model, 'num_attention_heads', 32),
+                'num_hidden_layers': getattr(dit_model, 'num_hidden_layers', 24),
+            })()
+
+        dit_handler.quantization = None
+
+        # Handle silence_latent
+        if silence_latent_path and os.path.exists(silence_latent_path):
+            # Load from provided path
+            dit_handler.silence_latent = torch.load(silence_latent_path).transpose(1, 2)
+            dit_handler.silence_latent = dit_handler.silence_latent.to(device).to(dit_handler.dtype)
+            print(f"[ACE_STEP_ADAPTER] Loaded silence_latent from: {silence_latent_path}")
+        else:
+            # Try to find in standard locations
+            silence_paths = [
+                os.path.join(full_checkpoint_dir, "acestep-v15-turbo", "silence_latent.pt"),
+                os.path.join(full_checkpoint_dir, "diffusion_models", "silence_latent.pt"),
+            ]
+            found = False
+            for path in silence_paths:
+                if os.path.exists(path):
+                    dit_handler.silence_latent = torch.load(path).transpose(1, 2)
+                    dit_handler.silence_latent = dit_handler.silence_latent.to(device).to(dit_handler.dtype)
+                    print(f"[ACE_STEP_ADAPTER] Loaded silence_latent from: {path}")
+                    found = True
+                    break
+
+            if not found:
+                # Generate a default silence latent
+                print(f"[ACE_STEP_ADAPTER] WARNING: silence_latent not found, generating default")
+                # Typical ACE-Step silence_latent shape: [1, 750, 2048] for 5Hz at 30 seconds
+                dit_handler.silence_latent = torch.zeros(1, 750, 2048, dtype=dit_handler.dtype).to(device)
+                print(f"[ACE_STEP_ADAPTER] Generated silence_latent (shape: {dit_handler.silence_latent.shape})")
+
+        # Set additional required attributes
+        dit_handler.offload_dit_to_cpu = False
+
+        # Initialize LLM handler
+        print(f"[ACE_STEP_ADAPTER] Initializing LLM handler...")
+        llm_handler = LLMHandler()
+
+        lm_status, lm_success = llm_handler.initialize(
+            checkpoint_dir=full_checkpoint_dir,
+            lm_model_path=lm_model_path,
+            backend="pt",  # Use PyTorch backend
+            device=device,
+            offload_to_cpu=offload_to_cpu,
+            dtype=dit_handler.dtype,
+        )
+
+        if not lm_success:
+            raise RuntimeError(f"LM initialization failed: {lm_status}")
+
+        print(f"[ACE_STEP_ADAPTER] LLM handler initialized successfully")
+
+        # Create ACE_STEP_MODEL object
+        ace_model = ACEStepModel(
+            dit_handler=dit_handler,
+            llm_handler=llm_handler,
+            checkpoint_dir=full_checkpoint_dir,
+            config_path="adapted",  # Special marker for adapted models
+            lm_model_path=lm_model_path,
+            device=device,
+        )
+
+        print(f"[ACE_STEP_ADAPTER] Successfully adapted ComfyUI types to ACE_STEP_MODEL")
+
+        return (ace_model,)
+
+
 # Node mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
     "ACE_STEP_ModelLoader": ACE_STEP_MODEL_LOADER,
+    "ACE_STEP_TypeAdapter": ACE_STEP_TYPE_ADAPTER,
     "ACE_STEP_TextToMusic": ACE_STEP_TEXT_TO_MUSIC,
     "ACE_STEP_Cover": ACE_STEP_COVER,
     "ACE_STEP_Repaint": ACE_STEP_REPAINT,
@@ -1632,6 +1897,7 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_ModelLoader": "ACE-Step Model Loader",
+    "ACE_STEP_TypeAdapter": "ACE-Step Type Adapter (MODEL/VAE/CLIP)",
     "ACE_STEP_TextToMusic": "ACE-Step Text to Music",
     "ACE_STEP_Cover": "ACE-Step Cover",
     "ACE_STEP_Repaint": "ACE-Step Repaint",
