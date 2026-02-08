@@ -1712,7 +1712,7 @@ class ACE_STEP_MODEL_LOADER:
         return (model,)
 
 
-class ACE_STEP_LM_LOADER:
+class ACE_STEP_LM_LOADER(ACE_STEP_BASE):
     """Load ACE-Step Language Model (LLM) separately
 
     This node loads only the Language Model component, which is used for:
