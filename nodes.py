@@ -83,9 +83,24 @@ try:
         valid_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
         return GenerationParams(**valid_kwargs)
 
+    # Fake LLMHandler for when LM is not loaded
+    # This provides a dummy object with llm_initialized=False to prevent AttributeError
+    class _FakeLLMHandler:
+        """Fake LLMHandler used when LM loading is skipped (lm_model_path=None)"""
+        llm_initialized = False
+
+    _FAKE_LLM_HANDLER = _FakeLLMHandler()
+
 except ImportError:
     ACESTEP_AVAILABLE = False
     print("ACE-Step not installed. Please install it first: pip install acestep")
+
+    # Define fake handler even when ACE-Step is not available
+    class _FakeLLMHandler:
+        """Fake LLMHandler used when LM loading is skipped (lm_model_path=None)"""
+        llm_initialized = False
+
+    _FAKE_LLM_HANDLER = _FakeLLMHandler()
 
 # --------------------------------------------------------------------------------
 # MonkeyPatch process_src_audio to use soundfile instead of torchaudio
@@ -367,7 +382,6 @@ class ACE_STEP_BASE:
         self,
         checkpoint_dir: str,
         config_path: str,
-        lm_model_path: str,
         device: str = "auto",
         offload_to_cpu: bool = False,
         lora_info: Optional[Dict[str, Any]] = None,
@@ -450,24 +464,10 @@ class ACE_STEP_BASE:
             )
             print(f"[ACE_STEP] DiT service initialized. Quantization: {self.dit_handler.quantization}")
 
-            # Initialize LLM handler (pass dtype from DiT handler)
-            # Skip LM loading if lm_model_path is "None"
-            if lm_model_path == "None":
-                self.llm_handler = None
-                print(f"[ACE_STEP] LM loading skipped (lm_model_path=None)")
-            else:
-                self.llm_handler = LLMHandler()
-                llm_status, llm_success = self.llm_handler.initialize(
-                    checkpoint_dir=checkpoint_dir,
-                    lm_model_path=lm_model_path,
-                    backend="pt",  # Use PyTorch backend to avoid vLLM conflicts
-                    device=device,
-                    offload_to_cpu=offload_to_cpu,
-                    dtype=self.dit_handler.dtype,  # Critical: pass dtype from DiT handler
-                )
-                print(f"[ACE_STEP] LLM handler init: {llm_status}")
-                if not llm_success:
-                    raise RuntimeError(f"LLM initialization failed: {llm_status}")
+            # LM is now loaded separately via LM_Loader node
+            # Use fake handler here, will be replaced if 'lm' input is provided
+            self.llm_handler = _FAKE_LLM_HANDLER
+            print(f"[ACE_STEP] LM not loaded in initialize_handlers (use 'lm' input from LM_Loader node)")
 
             # Apply LoRA for fresh handler
             self._update_lora_state(self.dit_handler, lora_info)
@@ -565,7 +565,6 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Text prompt or natural language description for music generation."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
                 "duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0, "tooltip": "Target duration of the generated music in seconds."}),
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
@@ -574,7 +573,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             },
             "optional": {
                 "model": ("ACE_STEP_MODEL", {"tooltip": "Optional pre-loaded model from TypeAdapter or ModelLoader. If provided, checkpoint loading will be skipped."}),
-                "lm": ("ACE_STEP_LM", {"tooltip": "Optional pre-loaded LM from LM_Loader. Use this when model doesn't include LM (e.g., from TypeAdapter)."}),
+                "lm": ("ACE_STEP_LM", {"tooltip": "Optional LM from LM_Loader node. Required for lyrics/metadata generation. Leave disconnected to skip LM loading (saves VRAM)."}),
                 "prefer_download_source": (["auto", "huggingface", "modelscope"], {"default": "auto", "tooltip": "Preferred source for auto-downloading models: auto (detect best), huggingface, or modelscope."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics. Leave empty for automatic generation by the language model."}),
@@ -648,7 +647,6 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             dit_handler, llm_handler = self.initialize_handlers(
                 checkpoint_dir=checkpoint_dir,
                 config_path=config_path,
-                lm_model_path=lm_model_path,
                 device=device,
                 lora_info=lora_info,
                 quantization=quantization,
@@ -738,7 +736,6 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Description of the target musical style (e.g., 'A jazz version of this song')."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Model configuration (turbo is faster)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Language model for metadata/lyrics."}),
                 "audio_cover_strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Strength of preserving original audio structure. Use LOWER (0.1-0.3) for more style change."}),
                 "batch_size": ("INT", {"default": 1, "min": 1, "max": 4, "tooltip": "Number of variations."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFFFFFFFFF, "tooltip": "Random seed."}),
@@ -826,7 +823,6 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 dit_handler, llm_handler = self.initialize_handlers(
                     checkpoint_dir=checkpoint_dir,
                     config_path=config_path,
-                    lm_model_path=lm_model_path,
                     device=device,
                     lora_info=lora_info,
                     quantization=quantization,
@@ -926,7 +922,6 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0, "tooltip": "End time for the repainting region in seconds. -1 means until the end of the audio."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for processing metadata."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
@@ -990,7 +985,6 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 dit_handler, llm_handler = self.initialize_handlers(
                     checkpoint_dir=checkpoint_dir,
                     config_path=config_path,
-                    lm_model_path=lm_model_path,
                     device=device,
                     lora_info=lora_info,
                     quantization=quantization,
@@ -1080,7 +1074,6 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
                 "query": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language description or prompt for music generation."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
@@ -1138,7 +1131,6 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
             dit_handler, llm_handler = self.initialize_handlers(
                 checkpoint_dir=checkpoint_dir,
                 config_path=config_path,
-                lm_model_path=lm_model_path,
                 device=device,
                 lora_info=lora_info,
                 quantization=quantization,
@@ -1247,11 +1239,10 @@ class ACE_STEP_FORMAT_SAMPLE(ACE_STEP_BASE):
             "required": {
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language description or prompt for music generation."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics to be formatted."}),
-                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for formatting and enhancement."}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
+                "lm": ("ACE_STEP_LM", {"tooltip": "LM from LM_Loader node. Required for formatting."}),
                 "user_metadata": ("STRING", {"default": "{}", "tooltip": "Custom metadata in JSON format."}),
             },
         }
@@ -1265,18 +1256,15 @@ class ACE_STEP_FORMAT_SAMPLE(ACE_STEP_BASE):
         self,
         caption: str,
         lyrics: str,
-        checkpoint_dir: str,
-        lm_model_path: str,
         device: str,
+        lm: Any = None,
         user_metadata: str = "{}",
     ) -> Tuple[str, str, str]:
-        # Initialize handlers
-        dit_handler, llm_handler = self.initialize_handlers(
-            checkpoint_dir=checkpoint_dir,
-            config_path="acestep-v15-turbo",  # Dummy, will be overwritten
-            lm_model_path=lm_model_path,
-            device=device,
-        )
+        # Check if LM is provided
+        if lm is None:
+            raise ValueError("ACE_STEP_LM_Loader node is required for FormatSample. Please add an LM_Loader node and connect its output to the 'lm' input.")
+
+        llm_handler = lm.llm_handler
 
         # Parse user metadata
         try:
@@ -1321,11 +1309,10 @@ class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
         return {
             "required": {
                 "query": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language query describing the music you want to generate."}),
-                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for generating lyrics and metadata."}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
+                "lm": ("ACE_STEP_LM", {"tooltip": "LM from LM_Loader node. Required for generating samples."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
                 "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
                 "top_k": ("INT", {"default": 50, "min": 0, "max": 1000, "tooltip": "Top-K filtering parameter for sampling."}),
@@ -1342,22 +1329,19 @@ class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
     def generate_sample(
         self,
         query: str,
-        checkpoint_dir: str,
-        lm_model_path: str,
         device: str,
+        lm: Any = None,
         instrumental: bool = False,
         vocal_language: str = "auto",
         top_k: int = 50,
         top_p: float = 0.95,
         temperature: float = 0.0,
     ) -> Tuple[str, str, float, int, str, str]:
-        # Initialize handlers
-        dit_handler, llm_handler = self.initialize_handlers(
-            checkpoint_dir=checkpoint_dir,
-            config_path="acestep-v15-turbo",  # Dummy
-            lm_model_path=lm_model_path,
-            device=device,
-        )
+        # Check if LM is provided
+        if lm is None:
+            raise ValueError("ACE_STEP_LM_Loader node is required for CreateSample. Please add an LM_Loader node and connect its output to the 'lm' input.")
+
+        llm_handler = lm.llm_handler
 
         # Create sample (note: upstream create_sample doesn't support seed)
         result = create_sample(
@@ -1391,13 +1375,11 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
         return {
             "required": {
                 "audio": ("AUDIO", {"tooltip": "The audio signal to be analyzed."}),
-                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Path to the language model used for audio analysis and understanding."}),
                 "target_duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0, "tooltip": "Target duration to reference during analysis."}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
+                "model": ("ACE_STEP_MODEL", {"tooltip": "Pre-loaded model from TypeAdapter or ModelLoader. Required for audio encoding."}),
+                "lm": ("ACE_STEP_LM", {"tooltip": "LM from LM_Loader node. Required for audio understanding."}),
                 "language": (["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt", "nl", "tr", "pl", "ar", "vi", "th"], {"default": "auto", "tooltip": "Hint the model about the vocal language in the audio."}),
                 "temperature": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature. Lower (0.0-0.3) = more precise/faithful, Higher (0.5+) = more creative. Try 0.1 for better accuracy."}),
                 "top_k": ("INT", {"default": 0, "min": 0, "max": 100, "tooltip": "Top-K sampling. 0 = disabled. Lower values (e.g., 20-50) can improve accuracy by limiting token choices."}),
@@ -1416,11 +1398,9 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
     def understand(
         self,
         audio: Dict[str, Any],
-        checkpoint_dir: str,
-        lm_model_path: str,
-        config_path: str,
         target_duration: float,
-        device: str,
+        model: Any = None,
+        lm: Any = None,
         language: str = "auto",
         temperature: float = 0.3,
         top_k: int = 0,
@@ -1430,6 +1410,15 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
     ) -> Tuple[str, str, float, str, str, str]:
         import tempfile
         import acestep.llm_inference
+
+        # Check required inputs
+        if model is None:
+            raise ValueError("ACE_STEP_MODEL is required for Understand. Please add a ModelLoader or TypeAdapter node and connect its output to the 'model' input.")
+        if lm is None:
+            raise ValueError("ACE_STEP_LM is required for Understand. Please add an LM_Loader node and connect its output to the 'lm' input.")
+
+        dit_handler = model.dit_handler
+        llm_handler = lm.llm_handler
 
         # Clear CUDA cache
         if torch.cuda.is_available():
@@ -1443,13 +1432,6 @@ class ACE_STEP_UNDERSTAND(ACE_STEP_BASE):
             sf.write(temp_path, waveform, audio["sample_rate"])
 
         try:
-            # Initialize handlers
-            dit_handler, llm_handler = self.initialize_handlers(
-                checkpoint_dir=checkpoint_dir,
-                config_path=config_path,
-                lm_model_path=lm_model_path,
-                device=device,
-            )
 
             # Convert audio to codes
             print(f"[understand] Converting audio to codes for {target_duration}s...")
@@ -1566,7 +1548,6 @@ class ACE_STEP_MODEL_LOADER:
             "required": {
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "DiT model configuration (turbo is faster)."}),
-                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Language model for lyrics/metadata."}),
                 "device": (DEVICES, {"default": "auto", "tooltip": "Device to use."}),
             },
             "optional": {
@@ -1586,14 +1567,17 @@ class ACE_STEP_MODEL_LOADER:
         self,
         checkpoint_dir: str,
         config_path: str,
-        lm_model_path: str,
         device: str,
         prefer_download_source: str = "auto",
         offload_to_cpu: bool = False,
         quantization: str = "None",
         compile_model: bool = False,
     ):
-        """Load ACE-Step models and return a model object"""
+        """Load ACE-Step DiT model and return a model object
+
+        Note: LM must be loaded separately using LM_Loader node and connected
+        to the generation node's 'lm' input for lyrics/metadata generation.
+        """
         from acestep_wrapper import ACEStepWrapper
         from acestep_common import ACEStepModel
 
@@ -1608,12 +1592,11 @@ class ACE_STEP_MODEL_LOADER:
         else:
             full_checkpoint_dir = checkpoint_dir
 
-        print(f"[ACE_STEP] Loading models from: {full_checkpoint_dir}")
+        print(f"[ACE_STEP] Loading DiT model from: {full_checkpoint_dir}")
         print(f"[ACE_STEP]   DiT: {config_path}")
-        print(f"[ACE_STEP]   LM: {lm_model_path}")
         print(f"[ACE_STEP]   Device: {device}")
 
-        # Initialize wrapper
+        # Initialize wrapper (DiT only, no LM)
         wrapper = ACEStepWrapper()
         wrapper.initialize(
             checkpoint_dir=full_checkpoint_dir,
@@ -1625,12 +1608,10 @@ class ACE_STEP_MODEL_LOADER:
             prefer_source=None if prefer_download_source == "auto" else prefer_download_source,
         )
 
-        # Create handlers (need to also load LM)
+        # Create DiT handler (LM is loaded separately via LM_Loader)
         from acestep.handler import AceStepHandler
-        from acestep.llm_inference import LLMHandler
 
         dit_handler = AceStepHandler()
-        llm_handler = LLMHandler()
 
         # Copy wrapper attributes to dit_handler
         for attr in ['device', 'dtype', 'offload_to_cpu', 'model', 'vae',
@@ -1642,20 +1623,10 @@ class ACE_STEP_MODEL_LOADER:
         dit_handler.config = dit_handler.model.config
         dit_handler.quantization = None if quantization == "None" else quantization
 
-        # Initialize LM handler
-        lm_status, lm_success = llm_handler.initialize(
-            checkpoint_dir=full_checkpoint_dir,
-            lm_model_path=lm_model_path,
-            backend="pt",  # Use PyTorch backend
-            device=device,
-            offload_to_cpu=offload_to_cpu,
-            dtype=dit_handler.dtype,
-        )
+        # Use fake LM handler (will be replaced if 'lm' input is provided)
+        llm_handler = _FAKE_LLM_HANDLER
 
-        if not lm_success:
-            raise RuntimeError(f"LM initialization failed: {lm_status}")
-
-        print(f"[ACE_STEP] Model loaded successfully")
+        print(f"[ACE_STEP] DiT model loaded successfully (LM not included - use LM_Loader node)")
 
         # Return model object
         model = ACEStepModel(
@@ -1663,7 +1634,7 @@ class ACE_STEP_MODEL_LOADER:
             llm_handler=llm_handler,
             checkpoint_dir=full_checkpoint_dir,
             config_path=config_path,
-            lm_model_path=lm_model_path,
+            lm_model_path="",  # Empty since LM is loaded separately
             device=device,
         )
 
@@ -1689,7 +1660,7 @@ class ACE_STEP_LM_LOADER:
         return {
             "required": {
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step models."}),
-                "lm_model_path": (get_acestep_models(), {"default": "None", "tooltip": "Language model for lyrics/metadata generation."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model to load."}),
                 "device": (DEVICES, {"default": "auto", "tooltip": "Device to use."}),
             },
             "optional": {
