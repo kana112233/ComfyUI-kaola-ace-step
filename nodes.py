@@ -1659,7 +1659,7 @@ class ACE_STEP_MODEL_LOADER:
         return (model,)
 
 
-class ACE_STEP_TYPE_ADAPTER:
+class ACE_STEP_TYPE_ADAPTER(ACE_STEP_BASE):
     """Adapt ComfyUI standard types (MODEL, VAE, CLIP) to ACE_STEP_MODEL
 
     This node allows you to use models loaded through ComfyUI's standard
@@ -1681,8 +1681,8 @@ class ACE_STEP_TYPE_ADAPTER:
         return {
             "required": {
                 "model": ("MODEL", {"tooltip": "DiT model from ComfyUI CheckpointLoaderSimple or similar."}),
-                "vae": ("VAE", {"tooltip": "VAE model from ComfyUI CheckpointLoaderSimple."}),
                 "clip": ("CLIP", {"tooltip": "CLIP/Text encoder from ComfyUI CheckpointLoaderSimple."}),
+                "vae": ("VAE", {"tooltip": "VAE model from ComfyUI CheckpointLoaderSimple."}),
                 "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for lyrics/metadata generation."}),
                 "device": (DEVICES, {"default": "auto", "tooltip": "Device for language model and additional processing."}),
             },
