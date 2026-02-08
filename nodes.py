@@ -50,6 +50,15 @@ sys.path.insert(0, os.path.dirname(__file__))  # For acestep_wrapper
 
 # Import our wrapper module
 from acestep_wrapper import ACEStepWrapper, create_handler_from_wrapper
+from acestep_common import (
+    ACEStepModel,
+    get_acestep_checkpoints,
+    get_acestep_models,
+    get_available_peft_loras,
+    DEVICES,
+    DOWNLOAD_SOURCES,
+    QUANTIZATION_OPTIONS,
+)
 
 try:
     from acestep.handler import AceStepHandler
@@ -301,40 +310,8 @@ ACESTEP_MODEL_NAME = "Ace-Step1.5"
 if ACESTEP_AVAILABLE:
     folder_paths.add_model_folder_path(ACESTEP_MODEL_NAME, os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME))
 
-def get_acestep_models():
-    if not ACESTEP_AVAILABLE:
-        return []
-    model_dir = os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)
-    if not os.path.exists(model_dir):
-        return []
-    # List subdirectories
-    models = [name for name in os.listdir(model_dir) if os.path.isdir(os.path.join(model_dir, name))]
-    # Ensure defaults are present if not found (for UI stability)
-    defaults = ["acestep-5Hz-lm-1.7B", "acestep-v15-turbo"]
-    for d in defaults:
-        if d not in models:
-            models.append(d)
-    return sorted(list(set(models)))
-
-def get_acestep_checkpoints():
-    if not ACESTEP_AVAILABLE:
-        return [""]
-    paths = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)
-    if not paths:
-        # Fallback to default path if not found
-        return [ACESTEP_MODEL_NAME]
-    
-    result = []
-    for p in paths:
-        if os.path.exists(p):
-            # Use basename for display
-            name = os.path.basename(p.rstrip('/\\'))
-            if not name:  # If path ends with separator
-                name = os.path.basename(os.path.dirname(p))
-            result.append(name if name else ACESTEP_MODEL_NAME)
-    
-    unique_results = sorted(list(set(result)))
-    return unique_results if unique_results else [ACESTEP_MODEL_NAME]
+# Use functions from acestep_common - these replace the local definitions
+# get_acestep_models, get_acestep_checkpoints, get_available_peft_loras are imported from acestep_common
 
 # Cache for checkpoint path resolution
 _checkpoint_path_cache = {}
@@ -360,42 +337,6 @@ def resolve_checkpoint_path(name: str) -> str:
     
     # Last fallback: return the name as-is (might be absolute path already)
     return name
-
-def get_available_peft_loras():
-    lora_paths = []
-    # Search paths: 
-    # 1. ComfyUI/models/loras
-    # 2. ComfyUI/models/Ace-Step1.5/loras
-    search_paths = [
-        os.path.join(folder_paths.models_dir, "loras"),
-        os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME, "loras")
-    ]
-    
-    # Standardize models_dir for relpath
-    base_dir = os.path.abspath(folder_paths.models_dir)
-    
-    for search_path in search_paths:
-        if not os.path.exists(search_path):
-            continue
-        # PEFT LoRA is a directory containing adapter_config.json
-        for root, dirs, files in os.walk(search_path):
-            if "adapter_config.json" in files:
-                # Found a LoRA directory
-                # Use path relative to models_dir for cleaner display
-                abs_root = os.path.abspath(root)
-                try:
-                    rel_path = os.path.relpath(abs_root, base_dir)
-                    # Normalize to forward slashes for cross-platform compatibility
-                    rel_path = rel_path.replace("\\", "/")
-                    lora_paths.append(rel_path)
-                except ValueError:
-                    # In case they are on different drives
-                    lora_paths.append(abs_root)
-    
-    if not lora_paths:
-        return ["None"]
-        
-    return sorted(list(set(lora_paths)))
 
 
 class ACE_STEP_BASE:
@@ -432,6 +373,7 @@ class ACE_STEP_BASE:
         lora_info: Optional[Dict[str, Any]] = None,
         quantization: Optional[str] = None,
         compile_model: bool = False,
+        prefer_source: Optional[str] = None,
     ):
         """Initialize ACE-Step handlers if not already initialized"""
         
@@ -504,6 +446,7 @@ class ACE_STEP_BASE:
                 offload_to_cpu=offload_to_cpu,
                 quantization=None if quantization == "None" else quantization,
                 compile_model=compile_model,
+                prefer_source=prefer_source,
             )
             print(f"[ACE_STEP] DiT service initialized. Quantization: {self.dit_handler.quantization}")
             # Initialize LLM handler (pass dtype from DiT handler)
@@ -574,6 +517,7 @@ class ACE_STEP_BASE:
         offload_to_cpu: bool = False,
         quantization: Optional[str] = None,
         compile_model: bool = False,
+        prefer_source: Optional[str] = None,
     ):
         """Initialize DiT handler using ACEStepWrapper
 
@@ -589,6 +533,7 @@ class ACE_STEP_BASE:
             offload_to_cpu=offload_to_cpu,
             quantization=quantization,
             compile_model=compile_model,
+            prefer_source=prefer_source,
         )
 
         # Copy wrapper attributes to dit_handler
@@ -623,6 +568,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
+                "prefer_download_source": (["auto", "huggingface", "modelscope"], {"default": "auto", "tooltip": "Preferred source for auto-downloading models: auto (detect best), huggingface, or modelscope."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics. Leave empty for automatic generation by the language model."}),
                 "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Beats per minute. 0 for automatic detection."}),
@@ -670,6 +616,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         quantization: str = "None",
         compile_model: bool = False,
         audio_format: str = "flac",
+        prefer_download_source: str = "auto",
         lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str]:
         # Clear CUDA cache before generation to prevent OOM
@@ -685,6 +632,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             lora_info=lora_info,
             quantization=quantization,
             compile_model=compile_model,
+            prefer_source=None if prefer_download_source == "auto" else prefer_download_source,
         )
 
         # Prepare generation parameters
@@ -778,6 +726,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Processing platform."}),
             },
             "optional": {
+                "prefer_download_source": (["auto", "huggingface", "modelscope"], {"default": "auto", "tooltip": "Preferred source for auto-downloading models."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Optional lyrics."}),
                 "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown", "tooltip": "Target language."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Instrumental mode."}),
@@ -1550,8 +1499,127 @@ class ACE_STEP_LORA_LOADER:
         },)
 
 
+class ACE_STEP_MODEL_LOADER:
+    """Load ACE-Step models for use in generation nodes
+
+    This node loads the DiT and LM models, returning a model object
+    that can be connected to other ACE-Step nodes. This allows
+    model reuse across multiple nodes without reloading.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "DiT model configuration (turbo is faster)."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for lyrics/metadata."}),
+                "device": (DEVICES, {"default": "auto", "tooltip": "Device to use."}),
+            },
+            "optional": {
+                "prefer_download_source": (DOWNLOAD_SOURCES, {"default": "auto", "tooltip": "Preferred source for auto-downloading models."}),
+                "offload_to_cpu": ("BOOLEAN", {"default": False, "tooltip": "Offload models to CPU when not in use."}),
+                "quantization": (QUANTIZATION_OPTIONS, {"default": "None", "tooltip": "Model quantization (requires torchao)."}),
+                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Use torch.compile (required for quantization)."}),
+            },
+        }
+
+    RETURN_TYPES = ("ACE_STEP_MODEL",)
+    RETURN_NAMES = ("model",)
+    FUNCTION = "load_model"
+    CATEGORY = "Audio/ACE-Step"
+
+    def load_model(
+        self,
+        checkpoint_dir: str,
+        config_path: str,
+        lm_model_path: str,
+        device: str,
+        prefer_download_source: str = "auto",
+        offload_to_cpu: bool = False,
+        quantization: str = "None",
+        compile_model: bool = False,
+    ):
+        """Load ACE-Step models and return a model object"""
+        from acestep_wrapper import ACEStepWrapper
+        from acestep_common import ACEStepModel
+
+        # Use ComfyUI's model directory if checkpoint_dir is just a name
+        if not os.path.isabs(checkpoint_dir):
+            full_checkpoint_dir = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)[0]
+            # Find matching directory by name
+            for p in folder_paths.get_folder_paths(ACESTEP_MODEL_NAME):
+                if os.path.basename(p.rstrip('/\\')) == checkpoint_dir:
+                    full_checkpoint_dir = p
+                    break
+        else:
+            full_checkpoint_dir = checkpoint_dir
+
+        print(f"[ACE_STEP] Loading models from: {full_checkpoint_dir}")
+        print(f"[ACE_STEP]   DiT: {config_path}")
+        print(f"[ACE_STEP]   LM: {lm_model_path}")
+        print(f"[ACE_STEP]   Device: {device}")
+
+        # Initialize wrapper
+        wrapper = ACEStepWrapper()
+        wrapper.initialize(
+            checkpoint_dir=full_checkpoint_dir,
+            config_path=config_path,
+            device=device,
+            offload_to_cpu=offload_to_cpu,
+            quantization=None if quantization == "None" else quantization,
+            compile_model=compile_model,
+            prefer_source=None if prefer_download_source == "auto" else prefer_download_source,
+        )
+
+        # Create handlers (need to also load LM)
+        from acestep.handler import AceStepHandler
+        from acestep.llm_inference import LLMHandler
+
+        dit_handler = AceStepHandler()
+        llm_handler = LLMHandler()
+
+        # Copy wrapper attributes to dit_handler
+        for attr in ['device', 'dtype', 'offload_to_cpu', 'model', 'vae',
+                     'text_encoder', 'text_tokenizer', 'silence_latent']:
+            if hasattr(wrapper, attr):
+                setattr(dit_handler, attr, getattr(wrapper, attr))
+
+        dit_handler.offload_dit_to_cpu = False
+        dit_handler.config = dit_handler.model.config
+        dit_handler.quantization = None if quantization == "None" else quantization
+
+        # Initialize LM handler
+        lm_status, lm_success = llm_handler.initialize(
+            checkpoint_dir=full_checkpoint_dir,
+            lm_model_path=lm_model_path,
+            backend="pt",  # Use PyTorch backend
+            device=device,
+            offload_to_cpu=offload_to_cpu,
+            dtype=dit_handler.dtype,
+        )
+
+        if not lm_success:
+            raise RuntimeError(f"LM initialization failed: {lm_status}")
+
+        print(f"[ACE_STEP] Model loaded successfully")
+
+        # Return model object
+        model = ACEStepModel(
+            dit_handler=dit_handler,
+            llm_handler=llm_handler,
+            checkpoint_dir=full_checkpoint_dir,
+            config_path=config_path,
+            lm_model_path=lm_model_path,
+            device=device,
+        )
+
+        return (model,)
+
+
 # Node mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
+    "ACE_STEP_ModelLoader": ACE_STEP_MODEL_LOADER,
     "ACE_STEP_TextToMusic": ACE_STEP_TEXT_TO_MUSIC,
     "ACE_STEP_Cover": ACE_STEP_COVER,
     "ACE_STEP_Repaint": ACE_STEP_REPAINT,
@@ -1563,6 +1631,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "ACE_STEP_ModelLoader": "ACE-Step Model Loader",
     "ACE_STEP_TextToMusic": "ACE-Step Text to Music",
     "ACE_STEP_Cover": "ACE-Step Cover",
     "ACE_STEP_Repaint": "ACE-Step Repaint",
