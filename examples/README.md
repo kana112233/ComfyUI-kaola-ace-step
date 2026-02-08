@@ -202,6 +202,88 @@ Adjust these parameters:
 
 ---
 
+### 6. Type Adapter Examples / 类型适配器示例 (v2)
+
+**Files**:
+- `type_adapter_simple_v2.json` - Simple example with AIO format
+- `type_adapter_example_v2.json` - Complete example with CreateSample
+- `split_format_example_v2.json` - Split format example (Comfy-Org)
+- `type_adapter_with_lora_v2.json` - LoRA compatibility example
+
+**Description**: Use ComfyUI standard loaders (CheckpointLoaderSimple) with ACE-Step.
+
+**描述**: 使用 ComfyUI 标准加载器与 ACE-Step 配合。
+
+**Key Features / 关键特性**:
+- **TypeAdapter Node**: Converts MODEL/VAE/CLIP to ACE_STEP_MODEL
+- **AIO Format Support**: Single checkpoint file
+- **Split Format Support**: Separate DiT, VAE, and Text Encoder files
+- **LoRA Compatible**: Full LoRA support with TypeAdapter
+- **Model Reuse**: Share loaded models between nodes
+
+**Use Case / 用例**: Integrate ACE-Step into existing ComfyUI workflows
+
+**Model Formats / 模型格式**:
+
+*Note: See below for detailed TypeAdapter usage instructions*
+
+---
+
+## TypeAdapter Usage Guide / 类型适配器使用指南
+
+### What is TypeAdapter? / 什么是 TypeAdapter？
+
+`ACE_STEP_TypeAdapter` allows you to use models loaded through ComfyUI's standard `CheckpointLoaderSimple` node with ACE-Step generation nodes.
+
+`ACE_STEP_TypeAdapter` 允许您使用 ComfyUI 标准的 `CheckpointLoaderSimple` 节点加载的模型与 ACE-Step 生成节点配合使用。
+
+### Workflow Examples / 工作流示例
+
+#### Example 1: Simple Text Generation / 示例 1：简单文本生成
+```
+CheckpointLoaderSimple → ACE_STEP_TypeAdapter → ACE_STEP_SimpleMode
+```
+
+#### Example 2: With LoRA / 示例 2：使用 LoRA
+```
+ACE_STEP_LoRALoader → [lora_info] ─┐
+                                   ├→ ACE_STEP_TextToMusic
+CheckpointLoaderSimple → TypeAdapter ─┘
+```
+
+### Model Formats / 模型格式
+
+**AIO Format** (All-in-One):
+```json
+CheckpointLoaderSimple
+  ckpt_name: "acestep_v15_turbo.safetensors"
+```
+
+**Split Format** (Comfy-Org):
+```json
+UNET Loader: diffusion_models/acestep_v1.5_turbo.safetensors
+VAE Loader: vae/ace_1.5_vae.safetensors
+CLIP Loader: text_encoders/qwen_1.7b_ace15.safetensors
+```
+
+### Key Differences / 主要区别
+
+| Feature | ModelLoader | TypeAdapter |
+|---------|-------------|-------------|
+| Input | Model path | MODEL/VAE/CLIP objects |
+| Loading | Direct load | Extract from loaded |
+| Use case | New workflows | Existing workflows |
+| Model reuse | Loads each time | Reuses loaded model |
+
+### Download Split Format / 下载分片格式
+```bash
+huggingface-cli download Comfy-Org/ace_step_1.5_ComfyUI_files \
+  split_files/diffusion_models/acestep_v1.5_turbo.safetensors \
+  --local-dir ComfyUI/models/
+```
+
+---
+
 ## Creating Your Own Workflows / 创建自己的工作流
 
 1. Start with an example that matches your use case / 从符合你用例的示例开始
