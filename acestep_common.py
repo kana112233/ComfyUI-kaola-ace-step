@@ -16,9 +16,17 @@ from typing import Dict, List, Any, Optional, Tuple, NamedTuple
 class ACEStepModel(NamedTuple):
     """ACE-Step model container for passing between nodes"""
     dit_handler: Any  # AceStepHandler instance
-    llm_handler: Any  # LLMHandler instance
+    llm_handler: Any  # LLMHandler instance (can be None)
     checkpoint_dir: str
     config_path: str
+    lm_model_path: str
+    device: str
+
+
+class ACEStepLM(NamedTuple):
+    """ACE-Step Language Model container for passing between nodes"""
+    llm_handler: Any  # LLMHandler instance
+    checkpoint_dir: str
     lm_model_path: str
     device: str
 

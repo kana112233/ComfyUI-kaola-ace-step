@@ -569,6 +569,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
             },
             "optional": {
                 "model": ("ACE_STEP_MODEL", {"tooltip": "Optional pre-loaded model from TypeAdapter or ModelLoader. If provided, checkpoint loading will be skipped."}),
+                "lm": ("ACE_STEP_LM", {"tooltip": "Optional pre-loaded LM from LM_Loader. Use this when model doesn't include LM (e.g., from TypeAdapter)."}),
                 "prefer_download_source": (["auto", "huggingface", "modelscope"], {"default": "auto", "tooltip": "Preferred source for auto-downloading models: auto (detect best), huggingface, or modelscope."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics. Leave empty for automatic generation by the language model."}),
@@ -605,6 +606,7 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         inference_steps: int,
         device: str,
         model: Optional = None,
+        lm: Optional = None,
         prefer_download_source: str = "auto",
         lora_info: Optional[Dict[str, Any]] = None,
         lyrics: str = "",
@@ -629,7 +631,11 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         if model is not None:
             # Skip loading, use the pre-loaded handlers
             dit_handler = model.dit_handler
-            llm_handler = model.llm_handler
+            # Use separate LM if provided, otherwise use model's LM
+            if lm is not None:
+                llm_handler = lm.llm_handler
+            else:
+                llm_handler = model.llm_handler
             # Update LoRA state if needed
             self._update_lora_state(dit_handler, lora_info)
         else:
@@ -1659,6 +1665,107 @@ class ACE_STEP_MODEL_LOADER:
         return (model,)
 
 
+class ACE_STEP_LM_LOADER:
+    """Load ACE-Step Language Model (LLM) separately
+
+    This node loads only the Language Model component, which is used for:
+    - Generating lyrics from descriptions
+    - Creating music metadata (BPM, key, duration)
+    - Understanding audio content
+
+    Separating LM from the main model allows you to:
+    - Load LM only when needed
+    - Share LM between multiple nodes
+    - Use TypeAdapter without loading LM
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step models."}),
+                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for lyrics/metadata generation."}),
+                "device": (DEVICES, {"default": "auto", "tooltip": "Device to use."}),
+            },
+            "optional": {
+                "offload_to_cpu": ("BOOLEAN", {"default": False, "tooltip": "Offload LM to CPU when not in use."}),
+            },
+        }
+
+    RETURN_TYPES = ("ACE_STEP_LM",)
+    RETURN_NAMES = ("lm",)
+    FUNCTION = "load_lm"
+    CATEGORY = "Audio/ACE-Step"
+
+    def load_lm(
+        self,
+        checkpoint_dir: str,
+        lm_model_path: str,
+        device: str,
+        offload_to_cpu: bool = False,
+    ):
+        """Load ACE-Step Language Model
+
+        Args:
+            checkpoint_dir: Directory containing ACE-Step models
+            lm_model_path: Path to the LM model
+            device: Device to use
+            offload_to_cpu: Whether to offload to CPU
+
+        Returns:
+            ACE_STEP_LM object with LLM handler
+        """
+        if not ACESTEP_AVAILABLE:
+            raise RuntimeError("ACE-Step is not installed. Please install it first.")
+
+        from acestep.llm_inference import LLMHandler
+        from acestep_common import ACEStepLM
+        from acestep_wrapper import ACEStepWrapper
+
+        # Auto-detect device
+        if device == "auto":
+            device = self.auto_detect_device()
+            print(f"[ACE_STEP_LM] Auto-detected device: {device}")
+
+        # Resolve checkpoint path
+        checkpoint_dir = resolve_checkpoint_path(checkpoint_dir)
+
+        print(f"[ACE_STEP_LM] Loading language model from: {checkpoint_dir}")
+        print(f"[ACE_STEP_LM]   LM: {lm_model_path}")
+
+        # Initialize a wrapper just to get the device/dtype info
+        wrapper = ACEStepWrapper()
+        wrapper.device = device
+        wrapper.dtype = torch.bfloat16 if device in ["cuda", "xpu"] else torch.float32
+        wrapper.offload_to_cpu = offload_to_cpu
+
+        # Initialize LLM handler
+        llm_handler = LLMHandler()
+        lm_status, lm_success = llm_handler.initialize(
+            checkpoint_dir=checkpoint_dir,
+            lm_model_path=lm_model_path,
+            backend="pt",  # Use PyTorch backend
+            device=device,
+            offload_to_cpu=offload_to_cpu,
+            dtype=wrapper.dtype,
+        )
+
+        if not lm_success:
+            raise RuntimeError(f"LM initialization failed: {lm_status}")
+
+        print(f"[ACE_STEP_LM] Language model loaded successfully")
+
+        # Return LM object
+        lm = ACEStepLM(
+            llm_handler=llm_handler,
+            checkpoint_dir=checkpoint_dir,
+            lm_model_path=lm_model_path,
+            device=device,
+        )
+
+        return (lm,)
+
+
 class ACE_STEP_TYPE_ADAPTER(ACE_STEP_BASE):
     """Adapt ComfyUI standard types (MODEL, VAE, CLIP) to ACE_STEP_MODEL
 
@@ -1670,10 +1777,9 @@ class ACE_STEP_TYPE_ADAPTER(ACE_STEP_BASE):
     This is useful when you have existing ComfyUI workflows using standard
     model loaders and want to integrate ACE-Step functionality.
 
-    Note: This adapter requires that the input model is compatible with
-    ACE-Step 1.5 architecture. Standard checkpoint loaders may not provide
-    all required components (e.g., silence_latent), so some components
-    may be generated or initialized with defaults.
+    Note: This adapter does NOT load the Language Model (LLM). Use the
+    separate ACE_STEP_LM_Loader node if you need LLM features like
+    automatic lyrics generation.
     """
 
     @classmethod
@@ -1681,13 +1787,11 @@ class ACE_STEP_TYPE_ADAPTER(ACE_STEP_BASE):
         return {
             "required": {
                 "model": ("MODEL", {"tooltip": "DiT model from ComfyUI CheckpointLoaderSimple or similar."}),
-                "clip": ("CLIP", {"tooltip": "CLIP/Text encoder from ComfyUI CheckpointLoaderSimple."}),
                 "vae": ("VAE", {"tooltip": "VAE model from ComfyUI CheckpointLoaderSimple."}),
-                "lm_model_path": (get_acestep_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for lyrics/metadata generation."}),
-                "device": (DEVICES, {"default": "auto", "tooltip": "Device for language model and additional processing."}),
+                "clip": ("CLIP", {"tooltip": "CLIP/Text encoder from ComfyUI CheckpointLoaderSimple."}),
+                "device": (DEVICES, {"default": "auto", "tooltip": "Device for processing."}),
             },
             "optional": {
-                "prefer_download_source": (DOWNLOAD_SOURCES, {"default": "auto", "tooltip": "Preferred source for auto-downloading LM model."}),
                 "offload_to_cpu": ("BOOLEAN", {"default": False, "tooltip": "Offload models to CPU when not in use."}),
                 "silence_latent_path": ("STRING", {"default": "", "tooltip": "Optional path to silence_latent.pt file. Leave empty to auto-generate."}),
             },
@@ -1703,9 +1807,7 @@ class ACE_STEP_TYPE_ADAPTER(ACE_STEP_BASE):
         model: Any,
         vae: Any,
         clip: Any,
-        lm_model_path: str,
         device: str,
-        prefer_download_source: str = "auto",
         offload_to_cpu: bool = False,
         silence_latent_path: str = "",
     ):
@@ -1850,23 +1952,10 @@ class ACE_STEP_TYPE_ADAPTER(ACE_STEP_BASE):
         # Set additional required attributes
         dit_handler.offload_dit_to_cpu = False
 
-        # Initialize LLM handler
-        print(f"[ACE_STEP_ADAPTER] Initializing LLM handler...")
-        llm_handler = LLMHandler()
-
-        lm_status, lm_success = llm_handler.initialize(
-            checkpoint_dir=full_checkpoint_dir,
-            lm_model_path=lm_model_path,
-            backend="pt",  # Use PyTorch backend
-            device=device,
-            offload_to_cpu=offload_to_cpu,
-            dtype=dit_handler.dtype,
-        )
-
-        if not lm_success:
-            raise RuntimeError(f"LM initialization failed: {lm_status}")
-
-        print(f"[ACE_STEP_ADAPTER] LLM handler initialized successfully")
+        # LM handler is NOT loaded by TypeAdapter
+        # Use ACE_STEP_LM_Loader separately if you need LLM features
+        llm_handler = None
+        print(f"[ACE_STEP_ADAPTER] LLM not loaded (use ACE_STEP_LM_Loader node separately if needed)")
 
         # Create ACE_STEP_MODEL object
         ace_model = ACEStepModel(
@@ -1874,7 +1963,7 @@ class ACE_STEP_TYPE_ADAPTER(ACE_STEP_BASE):
             llm_handler=llm_handler,
             checkpoint_dir=full_checkpoint_dir,
             config_path="adapted",  # Special marker for adapted models
-            lm_model_path=lm_model_path,
+            lm_model_path="",  # Empty since not loaded here
             device=device,
         )
 
@@ -1886,6 +1975,7 @@ class ACE_STEP_TYPE_ADAPTER(ACE_STEP_BASE):
 # Node mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
     "ACE_STEP_ModelLoader": ACE_STEP_MODEL_LOADER,
+    "ACE_STEP_LM_Loader": ACE_STEP_LM_LOADER,
     "ACE_STEP_TypeAdapter": ACE_STEP_TYPE_ADAPTER,
     "ACE_STEP_TextToMusic": ACE_STEP_TEXT_TO_MUSIC,
     "ACE_STEP_Cover": ACE_STEP_COVER,
@@ -1899,6 +1989,7 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_ModelLoader": "ACE-Step Model Loader",
+    "ACE_STEP_LM_Loader": "ACE-Step LM Loader",
     "ACE_STEP_TypeAdapter": "ACE-Step Type Adapter (MODEL/VAE/CLIP)",
     "ACE_STEP_TextToMusic": "ACE-Step Text to Music",
     "ACE_STEP_Cover": "ACE-Step Cover",
