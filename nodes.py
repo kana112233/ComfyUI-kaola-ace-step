@@ -1811,11 +1811,24 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
         # MONKEY PATCH: Inject gradient enablement into the training step
         # This is required because ComfyUI/Fabric might reset the grad state in threads
         if not hasattr(trainer.PreprocessedLoRAModule, 'original_training_step'):
+            print("[ACE_STEP] Installing monkey patch for PreprocessedLoRAModule.training_step")
             trainer.PreprocessedLoRAModule.original_training_step = trainer.PreprocessedLoRAModule.training_step
         
         def patched_step(self, *args, **kwargs):
             torch.set_grad_enabled(True)
-            return self.original_training_step(*args, **kwargs)
+            if not getattr(self, '_logged_grad_debug', False):
+                print(f"[ACE_STEP DEBUG] training_step called. Grad enabled: {torch.is_grad_enabled()}")
+                self._logged_grad_debug = True
+            
+            result = self.original_training_step(*args, **kwargs)
+            
+            if not getattr(self, '_logged_loss_debug', False):
+                print(f"[ACE_STEP DEBUG] Loss type: {type(result)}")
+                if isinstance(result, torch.Tensor):
+                    print(f"[ACE_STEP DEBUG] Loss requires_grad: {result.requires_grad}, Grad_fn: {result.grad_fn}")
+                self._logged_loss_debug = True
+                
+            return result
         
         trainer.PreprocessedLoRAModule.training_step = patched_step
 
