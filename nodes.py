@@ -1803,19 +1803,19 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
 
         import os
         import torch
-        from acestep.training import trainer
+        from acestep.training import trainer as trainer_mod
 
         # -------------------------------------------------------------------------
         # ROBUST TRAINING CLASSES (Fix for ComfyUI no_grad environment)
         # -------------------------------------------------------------------------
-        class SafePreprocessedLoRAModule(trainer.PreprocessedLoRAModule):
+        class SafePreprocessedLoRAModule(trainer_mod.PreprocessedLoRAModule):
             """Subclass that forces gradients enabled during training step."""
             def training_step(self, batch):
                 # FORCE ENABLE GRADIENTS
                 torch.set_grad_enabled(True)
                 return super().training_step(batch)
 
-        class SafeLoRATrainer(trainer.LoRATrainer):
+        class SafeLoRATrainer(trainer_mod.LoRATrainer):
             """Subclass that uses SafePreprocessedLoRAModule."""
             def train_from_preprocessed(self, tensor_dir, training_state=None, resume_from=None):
                 self.is_training = True
@@ -1859,13 +1859,13 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
                     # Disconnnect from ComfyUI's VRAM management temporarily implies we handle it? 
                     # No, just run the loop.
                     
-                    if trainer.LIGHTNING_AVAILABLE:
+                    if trainer_mod.LIGHTNING_AVAILABLE:
                         yield from self._train_with_fabric(data_module, training_state, resume_from)
                     else:
                         yield from self._train_basic(data_module, training_state)
                         
                 except Exception as e:
-                    trainer.logger.exception("Training failed")
+                    trainer_mod.logger.exception("Training failed")
                     yield 0, 0.0, f"❌ Training failed: {str(e)}"
                 finally:
                     self.is_training = False
