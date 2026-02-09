@@ -555,26 +555,27 @@ class ACE_STEP_BASE:
         print(f"[ACE_STEP] DiT handler initialized successfully")
 
 
-class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
-    """Generate music from text description"""
+class ACE_STEP_TEXT_TO_MUSIC:
+    """Generate music from text description
+
+    This node requires pre-loaded models:
+    - Connect 'ACE_STEP_ModelLoader' or 'ACE_STEP_TypeAdapter' output to 'model' input
+    - Connect 'ACE_STEP_LM_Loader' output to 'lm' input (required for lyrics/metadata generation)
+    """
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
+                "model": ("ACE_STEP_MODEL", {"tooltip": "Pre-loaded model from ModelLoader or TypeAdapter."}),
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Text prompt or natural language description for music generation."}),
-                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
                 "duration": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 600.0, "tooltip": "Target duration of the generated music in seconds."}),
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "model": ("ACE_STEP_MODEL", {"tooltip": "Optional pre-loaded model from TypeAdapter or ModelLoader. If provided, checkpoint loading will be skipped."}),
-                "lm": ("ACE_STEP_LM", {"tooltip": "Optional LM from LM_Loader node. Required for lyrics/metadata generation. Leave disconnected to skip LM loading (saves VRAM)."}),
-                "prefer_download_source": (["auto", "huggingface", "modelscope"], {"default": "auto", "tooltip": "Preferred source for auto-downloading models: auto (detect best), huggingface, or modelscope."}),
+                "lm": ("ACE_STEP_LM", {"tooltip": "LM from LM_Loader node. Required for lyrics/metadata generation or auto-detection."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics. Leave empty for automatic generation by the language model."}),
                 "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Beats per minute. 0 for automatic detection."}),
@@ -586,8 +587,6 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
                 "shift": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 5.0, "tooltip": "Sequence length scaling factor, default is 1.0."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
                 "lm_temperature": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "tooltip": "Sampling temperature for the language model. 0.0 is most stable (recommended)."}),
-                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
-                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
             },
         }
@@ -600,17 +599,13 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
 
     def generate(
         self,
+        model: Any,
         caption: str,
-        checkpoint_dir: str,
-        config_path: str,
         duration: float,
         batch_size: int,
         seed: int,
         inference_steps: int,
-        device: str,
-        model: Optional = None,
-        lm: Optional = None,
-        prefer_download_source: str = "auto",
+        lm: Any = None,
         lora_info: Optional[Dict[str, Any]] = None,
         lyrics: str = "",
         bpm: int = 0,
@@ -622,36 +617,50 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         shift: float = 1.0,
         thinking: bool = True,
         lm_temperature: float = 0.0,
-        quantization: str = "None",
-        compile_model: bool = False,
         audio_format: str = "flac",
     ) -> Tuple[Dict[str, Any], str, str]:
+        """Generate music from text description
+
+        Args:
+            model: Pre-loaded ACE_STEP_MODEL from ModelLoader or TypeAdapter (required)
+            caption: Text prompt for music generation
+            duration: Target duration in seconds
+            batch_size: Number of audio samples to generate
+            seed: Random seed (-1 for random)
+            inference_steps: Number of diffusion steps
+            lm: Optional LM from LM_Loader (required for lyrics/metadata generation)
+            lora_info: Optional LoRA for style fine-tuning
+            lyrics: Optional song lyrics (empty for auto-generation)
+            bpm: Beats per minute (0 for auto-detection)
+            keyscale: Musical key (empty for auto-generation)
+            timesignature: Time signature
+            vocal_language: Vocal language
+            instrumental: Generate instrumental only
+            guidance_scale: CFG strength
+            shift: Sequence length scaling
+            thinking: Enable CoT reasoning
+            lm_temperature: LM sampling temperature
+            audio_format: Output audio format
+
+        Returns:
+            Tuple of (audio_dict, audio_path, metadata_json)
+        """
         # Clear CUDA cache before generation to prevent OOM
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        # If pre-loaded model is provided, use it directly
-        if model is not None:
-            # Skip loading, use the pre-loaded handlers
-            dit_handler = model.dit_handler
-            # Use separate LM if provided, otherwise use model's LM
-            if lm is not None:
-                llm_handler = lm.llm_handler
-            else:
-                llm_handler = model.llm_handler
-            # Update LoRA state if needed
-            self._update_lora_state(dit_handler, lora_info)
+        # Get handlers from pre-loaded model
+        dit_handler = model.dit_handler
+
+        # Use separate LM if provided, otherwise use model's LM (if any)
+        if lm is not None:
+            llm_handler = lm.llm_handler
         else:
-            # Load model as usual
-            dit_handler, llm_handler = self.initialize_handlers(
-                checkpoint_dir=checkpoint_dir,
-                config_path=config_path,
-                device=device,
-                lora_info=lora_info,
-                quantization=quantization,
-                compile_model=compile_model,
-                prefer_source=None if prefer_download_source == "auto" else prefer_download_source,
-            )
+            llm_handler = getattr(model, 'llm_handler', None)
+
+        # Update LoRA state if needed
+        if lora_info and lora_info.get("path"):
+            _apply_lora_to_handler(dit_handler, lora_info)
 
         # Check if LM is required
         # LM is needed when: lyrics need generation, or metadata needs generation, or thinking is enabled
@@ -754,27 +763,28 @@ class ACE_STEP_TEXT_TO_MUSIC(ACE_STEP_BASE):
         return audio_output, audio_path, metadata
 
 
-class ACE_STEP_COVER(ACE_STEP_BASE):
-    """Generate cover version of an audio file"""
+class ACE_STEP_COVER:
+    """Generate cover version of an audio file
+
+    This node requires pre-loaded model:
+    - Connect 'ACE_STEP_ModelLoader' or 'ACE_STEP_TypeAdapter' output to 'model' input
+    """
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
+                "model": ("ACE_STEP_MODEL", {"tooltip": "Pre-loaded model from ModelLoader or TypeAdapter."}),
                 "src_audio": ("AUDIO", {"tooltip": "Source audio to be covered (remade in new style)."}),
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Description of the target musical style (e.g., 'A jazz version of this song')."}),
-                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights."}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Model configuration (turbo is faster)."}),
                 "audio_cover_strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Strength of preserving original audio structure. Use LOWER (0.1-0.3) for more style change."}),
                 "batch_size": ("INT", {"default": 1, "min": 1, "max": 4, "tooltip": "Number of variations."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFFFFFFFFF, "tooltip": "Random seed."}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 100, "tooltip": "Steps. Turbo: 8, Base: 50+."}),
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "CFG strength."}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Processing platform."}),
             },
             "optional": {
-                "model": ("ACE_STEP_MODEL", {"tooltip": "Optional pre-loaded model from TypeAdapter or ModelLoader. If provided, checkpoint loading will be skipped."}),
-                "prefer_download_source": (["auto", "huggingface", "modelscope"], {"default": "auto", "tooltip": "Preferred source for auto-downloading models."}),
+                "lm": ("ACE_STEP_LM", {"tooltip": "Optional LM from LM_Loader node. Required for lyrics/metadata generation."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Optional lyrics."}),
                 "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown", "tooltip": "Target language."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Instrumental mode."}),
@@ -783,8 +793,6 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 "timesignature": ("STRING", {"default": "", "tooltip": "Time signature."}),
                 "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Show LLM reasoning."}),
-                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
-                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output format."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA style model."}),
                 "instruction": ("STRING", {"default": "", "multiline": True, "tooltip": "Custom instruction (overrides default cover instruction)."}),
@@ -798,19 +806,15 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
 
     def generate_cover(
         self,
+        model: Any,
         src_audio: Dict[str, Any],
         caption: str,
-        checkpoint_dir: str,
-        config_path: str,
         audio_cover_strength: float,
         batch_size: int,
         seed: int,
         inference_steps: int,
         guidance_scale: float = 7.0,
-        device: str = "auto",
-        model: Optional = None,
-        lm: Optional = None,
-        prefer_download_source: str = "auto",
+        lm: Any = None,
         lyrics: str = "",
         vocal_language: str = "unknown",
         instrumental: bool = False,
@@ -819,17 +823,55 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
         timesignature: str = "",
         use_adg: bool = False,
         thinking: bool = True,
-        quantization: str = "None",
-        compile_model: bool = False,
         audio_format: str = "flac",
         lora_info: Optional[Dict[str, Any]] = None,
         instruction: str = "",
     ) -> Tuple[Dict[str, Any], str, str]:
+        """Generate cover version of an audio file
+
+        Args:
+            model: Pre-loaded ACE_STEP_MODEL from ModelLoader or TypeAdapter (required)
+            src_audio: Source audio to be covered
+            caption: Description of the target musical style
+            audio_cover_strength: Strength of preserving original audio structure
+            batch_size: Number of variations
+            seed: Random seed
+            inference_steps: Number of diffusion steps
+            guidance_scale: CFG strength
+            lm: Optional LM from LM_Loader node
+            lyrics: Optional lyrics
+            vocal_language: Target language
+            instrumental: Instrumental mode
+            bpm: Target BPM (0 for keep original)
+            keyscale: Musical key
+            timesignature: Time signature
+            use_adg: Adaptive Dual Guidance
+            thinking: Show LLM reasoning
+            audio_format: Output format
+            lora_info: Optional LoRA style model
+            instruction: Custom instruction
+
+        Returns:
+            Tuple of (audio_dict, audio_path, metadata_json)
+        """
         import tempfile
 
         # Clear CUDA cache before generation to prevent OOM
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+        # Get handlers from pre-loaded model
+        dit_handler = model.dit_handler
+
+        # Use separate LM if provided, otherwise use model's LM (if any)
+        if lm is not None:
+            llm_handler = lm.llm_handler
+        else:
+            llm_handler = getattr(model, 'llm_handler', None)
+
+        # Update LoRA state if needed
+        if lora_info and lora_info.get("path"):
+            _apply_lora_to_handler(dit_handler, lora_info)
 
         # Save input audio to temp file
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -840,29 +882,6 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
             sf.write(temp_path, waveform, src_audio["sample_rate"])
 
         try:
-            # If pre-loaded model is provided, use it directly
-            if model is not None:
-                # Skip loading, use the pre-loaded handlers
-                dit_handler = model.dit_handler
-                # Use separate LM if provided, otherwise use model's LM
-                if lm is not None:
-                    llm_handler = lm.llm_handler
-                else:
-                    llm_handler = model.llm_handler
-                # Update LoRA state if needed
-                self._update_lora_state(dit_handler, lora_info)
-            else:
-                # Load model as usual
-                dit_handler, llm_handler = self.initialize_handlers(
-                    checkpoint_dir=checkpoint_dir,
-                    config_path=config_path,
-                    device=device,
-                    lora_info=lora_info,
-                    quantization=quantization,
-                    compile_model=compile_model,
-                    prefer_source=None if prefer_download_source == "auto" else prefer_download_source,
-                )
-
             # Check if LM is required
             needs_lm = (
                 (not lyrics and not instrumental) or  # Need to generate lyrics
@@ -878,7 +897,7 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
 
             # Auto-set instruction for cover task
             # Cover task requires specific instruction for model to recognize the task type
-            cover_instruction = "Generate audio semantic tokens based on the given conditions:"
+            cover_instruction = instruction or "Generate audio semantic tokens based on the given conditions:"
 
             # Prepare generation parameters
             params = GenerationParams(
@@ -955,28 +974,29 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 os.remove(temp_path)
 
 
-class ACE_STEP_REPAINT(ACE_STEP_BASE):
-    """Repaint a specific segment of audio"""
+class ACE_STEP_REPAINT:
+    """Repaint a specific segment of audio
+
+    This node requires pre-loaded model and LM:
+    - Connect 'ACE_STEP_ModelLoader' or 'ACE_STEP_TypeAdapter' output to 'model' input
+    - Connect 'ACE_STEP_LM_Loader' output to 'lm' input (required for CoT reasoning)
+    """
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
+                "model": ("ACE_STEP_MODEL", {"tooltip": "Pre-loaded model from ModelLoader or TypeAdapter."}),
+                "lm": ("ACE_STEP_LM", {"tooltip": "LM from LM_Loader node. Required for repaint reasoning."}),
                 "src_audio": ("AUDIO", {"tooltip": "The original audio signal to be repainted."}),
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Style description prompt for the repainted region."}),
                 "repainting_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 600.0, "tooltip": "Start time for the repainting region in seconds."}),
                 "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0, "tooltip": "End time for the repainting region in seconds. -1 means until the end of the audio."}),
-                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "model": ("ACE_STEP_MODEL", {"tooltip": "Optional pre-loaded model from TypeAdapter or ModelLoader. If provided, checkpoint loading will be skipped."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
-                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
-                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
             },
         }
@@ -988,27 +1008,43 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
 
     def repaint_audio(
         self,
+        model: Any,
+        lm: Any,
         src_audio: Dict[str, Any],
         caption: str,
         repainting_start: float,
         repainting_end: float,
-        checkpoint_dir: str,
-        config_path: str,
         seed: int,
         inference_steps: int,
-        device: str,
-        model: Optional = None,
-        lm: Optional = None,
         thinking: bool = True,
-        quantization: str = "None",
-        compile_model: bool = False,
         audio_format: str = "flac",
     ) -> Tuple[Dict[str, Any], str, str]:
+        """Repaint a specific segment of audio
+
+        Args:
+            model: Pre-loaded ACE_STEP_MODEL from ModelLoader or TypeAdapter (required)
+            lm: LM from LM_Loader node (required for CoT reasoning)
+            src_audio: The original audio signal to be repainted
+            caption: Style description prompt for the repainted region
+            repainting_start: Start time for the repainting region in seconds
+            repainting_end: End time for the repainting region (-1 for end)
+            seed: Random seed (-1 for random)
+            inference_steps: Number of diffusion steps
+            thinking: Whether to show CoT reasoning
+            audio_format: Output audio format
+
+        Returns:
+            Tuple of (audio_dict, audio_path, metadata_json)
+        """
         import tempfile
 
         # Clear CUDA cache before generation to prevent OOM
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+        # Get handlers from pre-loaded model
+        dit_handler = model.dit_handler
+        llm_handler = lm.llm_handler
 
         # Save input audio to temp file
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -1019,28 +1055,6 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
             sf.write(temp_path, waveform, src_audio["sample_rate"])
 
         try:
-            # If pre-loaded model is provided, use it directly
-            if model is not None:
-                # Skip loading, use the pre-loaded handlers
-                dit_handler = model.dit_handler
-                # Use separate LM if provided, otherwise use model's LM
-                if lm is not None:
-                    llm_handler = lm.llm_handler
-                else:
-                    llm_handler = model.llm_handler
-                # Update LoRA state if needed
-                self._update_lora_state(dit_handler, lora_info)
-            else:
-                # Load model as usual
-                dit_handler, llm_handler = self.initialize_handlers(
-                    checkpoint_dir=checkpoint_dir,
-                    config_path=config_path,
-                    device=device,
-                    lora_info=lora_info,
-                    quantization=quantization,
-                    compile_model=compile_model,
-                )
-
             # Check if LM is required (repaint always needs LM for CoT reasoning)
             if thinking and not getattr(llm_handler, 'llm_initialized', False):
                 raise ValueError(
@@ -1122,28 +1136,28 @@ class ACE_STEP_REPAINT(ACE_STEP_BASE):
                 os.remove(temp_path)
 
 
-class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
-    """Simple mode: Generate music from natural language description"""
+class ACE_STEP_SIMPLE_MODE:
+    """Simple mode: Generate music from natural language description
+
+    This node requires pre-loaded model and LM:
+    - Connect 'ACE_STEP_ModelLoader' or 'ACE_STEP_TypeAdapter' output to 'model' input
+    - Connect 'ACE_STEP_LM_Loader' output to 'lm' input (required for metadata generation)
+    """
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
+                "model": ("ACE_STEP_MODEL", {"tooltip": "Pre-loaded model from ModelLoader or TypeAdapter."}),
+                "lm": ("ACE_STEP_LM", {"tooltip": "LM from LM_Loader node. Required for metadata generation."}),
                 "query": ("STRING", {"default": "", "multiline": True, "tooltip": "Natural language description or prompt for music generation."}),
-                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights (DiT model)."}),
-                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Specific model configuration to use (e.g., v1.5 turbo)."}),
                 "batch_size": ("INT", {"default": 2, "min": 1, "max": 8, "tooltip": "Number of audio samples to generate in a single batch."}),
                 "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "control_after_generate": True, "tooltip": "Random seed for reproducibility. Set to -1 for random generation."}),
                 "inference_steps": ("INT", {"default": 8, "min": 1, "max": 64, "tooltip": "Number of diffusion steps. Higher values (e.g., 25-50) improve quality but are slower."}),
-                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform to run the model on."}),
             },
             "optional": {
-                "model": ("ACE_STEP_MODEL", {"tooltip": "Optional pre-loaded model from TypeAdapter or ModelLoader. If provided, checkpoint loading will be skipped."}),
-                "lm": ("ACE_STEP_LM", {"tooltip": "Optional LM from LM_Loader node. Required for lyrics/metadata generation. Leave disconnected to skip LM loading (saves VRAM)."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
                 "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
-                "quantization": (["None", "int8_weight_only"], {"default": "None", "tooltip": "Model quantization (e.g., int8). Reduces VRAM usage but requires torchao and compile_model=True. Incompatible with LoRA."}),
-                "compile_model": ("BOOLEAN", {"default": False, "tooltip": "Whether to use torch.compile to optimize the model. Required for quantization. Slow on first run but faster afterwards."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
@@ -1157,48 +1171,47 @@ class ACE_STEP_SIMPLE_MODE(ACE_STEP_BASE):
 
     def simple_generate(
         self,
+        model: Any,
+        lm: Any,
         query: str,
-        checkpoint_dir: str,
-        config_path: str,
         batch_size: int,
         seed: int,
         inference_steps: int,
-        device: str,
-        model: Optional = None,
-        lm: Optional = None,
         instrumental: bool = False,
         vocal_language: str = "unknown",
-        quantization: str = "None",
-        compile_model: bool = False,
         thinking: bool = True,
         audio_format: str = "flac",
         lora_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], str, str, str]:
+        """Generate music from natural language description
+
+        Args:
+            model: Pre-loaded ACE_STEP_MODEL from ModelLoader or TypeAdapter (required)
+            lm: LM from LM_Loader node (required for metadata generation)
+            query: Natural language description for music generation
+            batch_size: Number of audio samples to generate
+            seed: Random seed (-1 for random)
+            inference_steps: Number of diffusion steps
+            instrumental: Generate instrumental only
+            vocal_language: Vocal language
+            thinking: Show CoT reasoning
+            audio_format: Output audio format
+            lora_info: Optional LoRA for style fine-tuning
+
+        Returns:
+            Tuple of (audio_dict, audio_path, metadata_json, sample_info_json)
+        """
         # Clear CUDA cache before generation to prevent OOM
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        # If pre-loaded model is provided, use it directly
-        if model is not None:
-            # Skip loading, use the pre-loaded handlers
-            dit_handler = model.dit_handler
-            # Use separate LM if provided, otherwise use model's LM
-            if lm is not None:
-                llm_handler = lm.llm_handler
-            else:
-                llm_handler = model.llm_handler
-            # Update LoRA state if needed
-            self._update_lora_state(dit_handler, lora_info)
-        else:
-            # Load model as usual
-            dit_handler, llm_handler = self.initialize_handlers(
-                checkpoint_dir=checkpoint_dir,
-                config_path=config_path,
-                device=device,
-                lora_info=lora_info,
-                quantization=quantization,
-                compile_model=compile_model,
-            )
+        # Get handlers from pre-loaded model
+        dit_handler = model.dit_handler
+        llm_handler = lm.llm_handler
+
+        # Update LoRA state if needed
+        if lora_info and lora_info.get("path"):
+            _apply_lora_to_handler(dit_handler, lora_info)
 
         # SimpleMode always requires LM for create_sample
         if not getattr(llm_handler, 'llm_initialized', False):
