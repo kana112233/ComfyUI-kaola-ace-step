@@ -263,9 +263,10 @@ def apply_comfyui_training_patches():
 
 def apply_training_step_patch():
     """
-    Patch PreprocessedLoRAModule.training_step to:
-    1. Preserve gradients (don't call .float() on loss)
-    2. Fix bfloat16 numpy conversion error in logging
+    Patch PreprocessedLoRAModule.training_step to preserve gradients.
+
+    Removes autocast and .float() conversion that were detaching gradients.
+    Uses pure tensor operations in model's dtype for ComfyUI compatibility.
     """
     try:
         from acestep.training.trainer import PreprocessedLoRAModule, sample_discrete_timestep
@@ -274,11 +275,8 @@ def apply_training_step_patch():
         _original_training_step = PreprocessedLoRAModule.training_step
 
         def patched_training_step(self, batch):
-            """Training step that preserves gradients and fixes logging."""
+            """Training step that preserves gradients - NO autocast."""
             import torch.nn.functional as F
-            import logging
-
-            logger = logging.getLogger(__name__)
 
             # Get tensors from batch
             target_latents = batch["target_latents"].to(self.device)
@@ -295,51 +293,38 @@ def apply_training_step_patch():
                 model_dtype = param.dtype
                 break
             if model_dtype is None:
-                model_dtype = torch.bfloat16  # Default for ACE-Step
+                model_dtype = torch.float32  # Default to float32
 
             # Flow matching: sample noise x1 and interpolate with data x0
-            x1 = torch.randn_like(target_latents)
+            x1 = torch.randn_like(target_latents, dtype=model_dtype)
             x0 = target_latents
 
-            # Sample timesteps using model's dtype (NOT float32)
+            # Sample timesteps using model's dtype
             t, r = sample_discrete_timestep(bsz, self.device, model_dtype)
             t_ = t.unsqueeze(-1).unsqueeze(-1)
 
             # Interpolate: x_t = t * x1 + (1 - t) * x0
             xt = t_ * x1 + (1.0 - t_) * x0
 
-            # Use autocast with the appropriate dtype
-            _device_type = self.device if isinstance(self.device, str) else self.device.type
-            _autocast_dtype = torch.float16 if _device_type == "mps" else model_dtype
+            # Forward through decoder (NO autocast - use raw operations)
+            decoder_outputs = self.model.decoder(
+                hidden_states=xt,
+                timestep=t,
+                timestep_r=r,
+                attention_mask=attention_mask,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+                context_latents=context_latents,
+            )
 
-            with torch.autocast(device_type=_device_type, dtype=_autocast_dtype):
-                # Forward through decoder
-                decoder_outputs = self.model.decoder(
-                    hidden_states=xt,
-                    timestep=t,
-                    timestep_r=r,
-                    attention_mask=attention_mask,
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=encoder_attention_mask,
-                    context_latents=context_latents,
-                )
+            # Flow matching loss: predict the flow field v = x1 - x0
+            flow = x1 - x0
+            diffusion_loss = F.mse_loss(decoder_outputs[0], flow)
 
-                # Flow matching loss: predict the flow field v = x1 - x0
-                flow = x1 - x0
-                diffusion_loss = F.mse_loss(decoder_outputs[0], flow)
-
-            # Log with float32 conversion (fixes bfloat16 numpy error)
-            logger.debug(f"Training step:")
-            logger.debug(f"  target_latents: {target_latents.shape}")
-            logger.debug(f"  attention_mask: {attention_mask.shape}")
-            logger.debug(f"  encoder_hidden_states: {encoder_hidden_states.shape}")
-            logger.debug(f"  context_latents: {context_latents.shape}")
-            # Convert to float32 for logging (fixes numpy conversion error)
-            logger.debug(f"  Sampled t: {t.float().cpu().numpy()[:4]}... (showing first 4)")
-
-            # Keep loss in its dtype with gradients (NO .float() conversion)
+            # Store loss (convert to float for logging)
             self.training_losses.append(diffusion_loss.detach().float().item())
 
+            # Return loss WITH gradients (no dtype conversion)
             return diffusion_loss
 
         # Apply the patch
