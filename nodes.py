@@ -1986,12 +1986,10 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
             output_dir=output_dir,
         )
 
-        # Apply training fixes for ComfyUI compatibility
-        try:
-            from lora_training import apply_training_fixes
-            apply_training_fixes()
-        except Exception as e:
-            return None, f"⚠️ Could not apply training fixes: {e}"
+        
+        # Training fixes are now handled internally by SafeLoRATrainer/SafePreprocessedLoRAModule
+        # using the patched_training_step function. 
+        # No external patching required here.
 
         # Create trainer (Using our SAFE subclass)
         # from acestep.training.trainer import LoRATrainer  <-- REPLACED
