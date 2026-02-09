@@ -6,7 +6,12 @@ Uses ComfyUILoRATrainer which is a standalone implementation without monkey patc
 """
 
 import torch
-from .comfyui_trainer import ComfyUILoRATrainer
+
+# Try relative import first (when used as package), fall back to absolute
+try:
+    from .comfyui_trainer import ComfyUILoRATrainer
+except ImportError:
+    from comfyui_trainer import ComfyUILoRATrainer
 
 
 def apply_all_training_patches():
