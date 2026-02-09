@@ -179,7 +179,7 @@ if ACESTEP_AVAILABLE:
             """Training loop without Fabric, using fp32 precision."""
             from torch.utils.data import DataLoader
             from torch.optim.lr_scheduler import LinearLR, CosineAnnealingWarmRestarts, SequentialLR
-            from acestep.training.dataset_builder import PreprocessedTensorDataset
+            from acestep.training.data_module import PreprocessedTensorDataset
             from acestep.training.lora_utils import save_lora_weights
             import os
             import time
