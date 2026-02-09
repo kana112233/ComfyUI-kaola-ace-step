@@ -2,244 +2,40 @@
 LoRA Training Module for ACE-Step ComfyUI Nodes
 
 This module provides training utilities that are compatible with ComfyUI's worker thread model.
-It uses fp32 precision instead of bf16 to avoid threading issues.
+Uses ComfyUILoRATrainer which is a standalone implementation without monkey patches.
 """
 
-import os
-import time
-from typing import Generator, Tuple, Dict, Optional
-from pathlib import Path
-
 import torch
-from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import LinearLR, CosineAnnealingWarmRestarts, SequentialLR
+from .comfyui_trainer import ComfyUILoRATrainer
 
 
-class ComfyUITrainer:
+def apply_all_training_patches():
     """
-    Trainer class that works with ComfyUI's execution model.
-    Uses fp32 precision to avoid BFloat16 threading issues.
-    """
+    Apply ComfyUI-compatible training "patches" to ACE-Step.
 
-    def __init__(self, dit_handler, lora_config, training_config):
-        """
-        Initialize the trainer.
-
-        Args:
-            dit_handler: ACE-Step DiT handler with loaded model
-            lora_config: LoRA configuration object
-            training_config: Training configuration object
-        """
-        self.dit_handler = dit_handler
-        self.lora_config = lora_config
-        self.training_config = training_config
-        self.device = dit_handler.device  # Get device from handler
-        self.module = None
-        self.is_training = False
-
-    def train_from_preprocessed(
-        self,
-        tensor_dir: str,
-        training_state: Optional[Dict] = None,
-        resume_from: Optional[str] = None,
-    ) -> Generator[Tuple[int, float, str], None, None]:
-        """
-        Main training loop without Fabric, using fp32 precision.
-
-        This is a ComfyUI-compatible version that avoids BFloat16 issues.
-
-        Args:
-            tensor_dir: Directory containing preprocessed .pt files
-            training_state: Optional state dict for stopping control
-            resume_from: Optional path to checkpoint directory to resume from
-
-        Yields:
-            Tuples of (step, loss, status_message)
-        """
-        from acestep.training.trainer import PreprocessedLoRAModule
-        from acestep.training.data_module import PreprocessedTensorDataset
-        from acestep.training.lora_utils import save_lora_weights
-
-        # Validate tensor directory
-        tensor_path = Path(tensor_dir)
-        if not tensor_path.exists():
-            yield 0, 0.0, f"❌ Tensor directory not found: {tensor_dir}"
-            return
-
-        # Create output directory
-        os.makedirs(self.training_config.output_dir, exist_ok=True)
-
-        # Create training module FIRST (critical step that was missing)
-        print("[ComfyUITrainer] Creating PreprocessedLoRAModule...")
-        self.module = PreprocessedLoRAModule(
-            model=self.dit_handler.model,
-            lora_config=self.lora_config,
-            training_config=self.training_config,
-            device=self.dit_handler.device,
-            dtype=self.dit_handler.dtype,
-        )
-
-        # Create dataset and dataloader
-        dataset = PreprocessedTensorDataset(tensor_dir)
-
-        if len(dataset) == 0:
-            yield 0, 0.0, "❌ No valid samples found in tensor directory"
-            return
-
-        train_loader = DataLoader(
-            dataset,
-            batch_size=self.training_config.batch_size,
-            shuffle=True,
-            num_workers=self.training_config.num_workers,
-            pin_memory=self.training_config.pin_memory,
-        )
-
-        yield 0, 0.0, f"📂 Loaded {len(dataset)} preprocessed samples ({len(train_loader)} batches)"
-
-        # Count trainable parameters
-        trainable_params = [p for p in self.module.model.parameters() if p.requires_grad]
-
-        if not trainable_params:
-            yield 0, 0.0, "❌ No trainable parameters found!"
-            return
-
-        param_count = sum(p.numel() for p in trainable_params)
-        yield 0, 0.0, f"🎯 Training {param_count:,} parameters"
-
-        # Create optimizer
-        optimizer = torch.optim.AdamW(
-            trainable_params,
-            lr=self.training_config.learning_rate,
-            weight_decay=self.training_config.weight_decay,
-        )
-
-        # Calculate total steps
-        total_steps = (
-            len(train_loader) * self.training_config.max_epochs // self.training_config.gradient_accumulation_steps
-        )
-        warmup_steps = min(self.training_config.warmup_steps, max(1, total_steps // 10))
-
-        # Create scheduler
-        warmup_scheduler = LinearLR(
-            optimizer,
-            start_factor=0.1,
-            end_factor=1.0,
-            total_iters=warmup_steps,
-        )
-        main_scheduler = CosineAnnealingWarmRestarts(
-            optimizer,
-            T_0=max(1, total_steps - warmup_steps),
-            T_mult=1,
-            eta_min=self.training_config.learning_rate * 0.01,
-        )
-        scheduler = SequentialLR(
-            optimizer,
-            schedulers=[warmup_scheduler, main_scheduler],
-            milestones=[warmup_steps],
-        )
-
-        # Use fp32 precision (NOT bf16 - ComfyUI worker threads don't support it)
-        print(f"[ComfyUITrainer] Using fp32 precision (bf16 disabled for ComfyUI compatibility)")
-        self.module.model.train()
-        self.module.model.to(self.device)
-
-        global_step = 0
-        accumulation_step = 0
-        accumulated_loss = 0.0
-
-        for epoch in range(self.training_config.max_epochs):
-            epoch_loss = 0.0
-            num_batches = 0
-            epoch_start_time = time.time()
-
-            for batch in train_loader:
-                # Check for stop signal
-                if training_state and training_state.get("should_stop", False):
-                    yield global_step, accumulated_loss / max(accumulation_step, 1), "⏹️ Training stopped"
-                    return
-
-                # Forward pass
-                loss = self.module.training_step(batch)
-                loss = loss / self.training_config.gradient_accumulation_steps
-                loss.backward()
-
-                accumulated_loss += loss.item()
-                accumulation_step += 1
-
-                # Optimizer step with gradient accumulation
-                if accumulation_step >= self.training_config.gradient_accumulation_steps:
-                    torch.nn.utils.clip_grad_norm_(
-                        trainable_params, self.training_config.max_grad_norm
-                    )
-                    optimizer.step()
-                    scheduler.step()
-                    optimizer.zero_grad()
-                    global_step += 1
-
-                    if global_step % self.training_config.log_every_n_steps == 0:
-                        avg_loss = accumulated_loss / accumulation_step
-                        yield (
-                            global_step,
-                            avg_loss,
-                            f"Epoch {epoch+1}/{self.training_config.max_epochs}, Step {global_step}/{total_steps}, Loss: {avg_loss:.4f}",
-                        )
-
-                    epoch_loss += accumulated_loss
-                    num_batches += 1
-                    accumulated_loss = 0.0
-                    accumulation_step = 0
-
-            epoch_time = time.time() - epoch_start_time
-            avg_epoch_loss = epoch_loss / max(num_batches, 1)
-            yield (
-                global_step,
-                avg_epoch_loss,
-                f"✅ Epoch {epoch+1}/{self.training_config.max_epochs} complete in {epoch_time:.1f}s, Loss: {avg_epoch_loss:.4f}",
-            )
-
-            # Save checkpoint
-            if (epoch + 1) % self.training_config.save_every_n_epochs == 0:
-                checkpoint_dir = os.path.join(
-                    self.training_config.output_dir, "checkpoints", f"epoch_{epoch+1}"
-                )
-                save_lora_weights(self.module.model, checkpoint_dir)
-                yield global_step, avg_epoch_loss, f"💾 Checkpoint saved to {checkpoint_dir}"
-
-        # Save final LoRA
-        final_path = os.path.join(self.training_config.output_dir, "final")
-        save_lora_weights(self.module.model, final_path)
-        final_loss = avg_epoch_loss
-        yield global_step, final_loss, f"✅ Training complete! LoRA saved to {final_path}"
-
-
-def apply_comfyui_training_patches():
-    """
-    Apply ComfyUI-compatible training patches to ACE-Step.
-
-    This patches the LoRATrainer to use our ComfyUITrainer instead of
-    the original training logic that has BFloat16 compatibility issues.
+    Actually replaces the training method with our standalone trainer.
+    No actual monkey patching of ACE-Step internals needed!
     """
     try:
         import acestep.training.trainer as trainer_module
 
-        # Save original train_from_preprocessed
+        # Save original for reference
         _original_train_from_preprocessed = trainer_module.LoRATrainer.train_from_preprocessed
 
         def patched_train_from_preprocessed(
             self, tensor_dir, training_state=None, resume_from=None
         ):
-            """Patched training that uses ComfyUITrainer."""
-            # Set training flag
+            """Use our standalone ComfyUI trainer instead of original."""
             self.is_training = True
 
             try:
-                # Create our trainer instance
-                trainer = ComfyUITrainer(
+                # Create our standalone trainer
+                trainer = ComfyUILoRATrainer(
                     dit_handler=self.dit_handler,
                     lora_config=self.lora_config,
                     training_config=self.training_config,
                 )
-                # Delegate to our trainer
+                # Run training
                 yield from trainer.train_from_preprocessed(
                     tensor_dir=tensor_dir,
                     training_state=training_state,
@@ -248,132 +44,13 @@ def apply_comfyui_training_patches():
             finally:
                 self.is_training = False
 
-        # Apply the patch
+        # Replace the method
         trainer_module.LoRATrainer.train_from_preprocessed = patched_train_from_preprocessed
-        print("[MonkeyPatch] LoRA training patched to use ComfyUITrainer with fp32 precision")
+        print("[MonkeyPatch] LoRA training replaced with ComfyUI-compatible standalone trainer")
         return True
 
     except Exception as e:
         print(f"[MonkeyPatch] Could not apply training patches: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False
-
-
-def apply_training_step_patch():
-    """
-    Patch training_step to fix bfloat16 numpy conversion in logging.
-
-    Directly modifies the problematic line that converts bfloat16 to numpy.
-    """
-    try:
-        from acestep.training.trainer import PreprocessedLoRAModule
-        import torch
-        import torch.nn.functional as F
-        from acestep.training.trainer import sample_discrete_timestep
-
-        # Save original
-        _original_training_step = PreprocessedLoRAModule.training_step
-
-        def patched_training_step(self, batch):
-            """Training step with fixed logging for bfloat16."""
-            import logging
-            logger = logging.getLogger(__name__)
-
-            # Get tensors from batch
-            target_latents = batch["target_latents"].to(self.device)
-            attention_mask = batch["attention_mask"].to(self.device)
-            encoder_hidden_states = batch["encoder_hidden_states"].to(self.device)
-            encoder_attention_mask = batch["encoder_attention_mask"].to(self.device)
-            context_latents = batch["context_latents"].to(self.device)
-
-            bsz = target_latents.shape[0]
-
-            # Use autocast (like original)
-            _device_type = self.device if isinstance(self.device, str) else self.device.type
-            _autocast_dtype = torch.float16 if _device_type == "mps" else torch.bfloat16
-
-            with torch.autocast(device_type=_device_type, dtype=_autocast_dtype):
-                # Flow matching: sample noise x1 and interpolate with data x0
-                x1 = torch.randn_like(target_latents)
-                x0 = target_latents
-
-                # Sample timesteps from discrete turbo shift=3 schedule (8 steps)
-                t, r = sample_discrete_timestep(bsz, self.device, torch.bfloat16)
-                t_ = t.unsqueeze(-1).unsqueeze(-1)
-
-                # Interpolate: x_t = t * x1 + (1 - t) * x0
-                xt = t_ * x1 + (1.0 - t_) * x0
-
-                # Forward through decoder (distilled turbo model, no CFG)
-                decoder_outputs = self.model.decoder(
-                    hidden_states=xt,
-                    timestep=t,
-                    timestep_r=r,
-                    attention_mask=attention_mask,
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=encoder_attention_mask,
-                    context_latents=context_latents,
-                )
-
-                # Flow matching loss: predict the flow field v = x1 - x0
-                flow = x1 - x0
-                diffusion_loss = F.mse_loss(decoder_outputs[0], flow)
-
-            # Log with FIX: convert t to float32 before numpy
-            logger.debug(f"Training step:")
-            logger.debug(f"  target_latents: {target_latents.shape}")
-            logger.debug(f"  attention_mask: {attention_mask.shape}")
-            logger.debug(f"  encoder_hidden_states: {encoder_hidden_states.shape}")
-            logger.debug(f"  context_latents: {context_latents.shape}")
-            # FIX: Convert to float32 FIRST, then to numpy
-            t_for_log = t.float().cpu()
-            logger.debug(f"  Sampled t: {t_for_log.numpy()[:4]}... (showing first 4)")
-
-            # Convert loss to float32 (like original, but DON'T return it)
-            loss_item = diffusion_loss.float().item()
-            self.training_losses.append(loss_item)
-
-            # Return the loss WITHOUT .float() - keep it with gradients!
-            return diffusion_loss
-
-        # Apply the patch
-        PreprocessedLoRAModule.training_step = patched_training_step
-        print("[MonkeyPatch] training_step patched: fixed logging, kept gradients")
-        return True
-
-    except Exception as e:
-        print(f"[MonkeyPatch] Could not patch training_step: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-def apply_sample_timestep_patch():
-    """
-    Patch sample_discrete_timestep to use float32 instead of bfloat16.
-
-    This fixes BFloat16 to numpy conversion errors in training_step logging.
-    """
-    try:
-        from acestep.training import trainer as trainer_module
-
-        # Save original function
-        _original_sample_discrete_timestep = trainer_module.sample_discrete_timestep
-
-        def patched_sample_discrete_timestep(bsz, device, dtype):
-            """Sample timesteps using float32 (ignores bfloat16 dtype parameter)."""
-            # Always use float32 for ComfyUI compatibility
-            return _original_sample_discrete_timestep(bsz, device, torch.float32)
-
-        # Apply the patch
-        trainer_module.sample_discrete_timestep = patched_sample_discrete_timestep
-        print("[MonkeyPatch] sample_discrete_timestep patched to use float32")
-        return True
-
-    except Exception as e:
-        print(f"[MonkeyPatch] Could not patch sample_discrete_timestep: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -388,7 +65,6 @@ def apply_torchaudio_soundfile_patch():
     try:
         import torchaudio
         import soundfile as sf
-        import numpy as np
 
         # Save original
         _original_torchaudio_load = torchaudio.load
@@ -425,13 +101,3 @@ def apply_torchaudio_soundfile_patch():
     except ImportError as e:
         print(f"[MonkeyPatch] Could not patch torchaudio.load: {e}")
         return False
-
-
-def apply_all_training_patches():
-    """
-    Apply all training-related patches for ComfyUI compatibility.
-    """
-    print("[MonkeyPatch] Applying training patches for ComfyUI compatibility...")
-    apply_torchaudio_soundfile_patch()
-    apply_training_step_patch()
-    apply_comfyui_training_patches()
