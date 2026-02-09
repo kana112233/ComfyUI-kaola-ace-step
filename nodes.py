@@ -1966,7 +1966,7 @@ class ACE_STEP_CREATE_TRAINING_SAMPLE:
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-        return f"Saved: {audio_filename}"
+        return (f"Saved: {audio_filename}",)
 
 
 class ACE_STEP_COLLECT_TRAINING_SAMPLES:

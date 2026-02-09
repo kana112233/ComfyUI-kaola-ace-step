@@ -5,17 +5,30 @@
     {
       "id": 1,
       "type": "ACE-Step Create Training Sample",
-      "pos": [50, 200],
-      "size": {"0": 320, "1": 450},
+      "pos": [
+        50,
+        200
+      ],
+      "size": {
+        "0": 320,
+        "1": 450
+      },
       "flags": {},
       "order": 0,
       "mode": 0,
       "outputs": [
-        {"name": "sample_info", "type": "STRING", "links": [1], "shape": 3}
+        {
+          "name": "sample_info",
+          "type": "STRING",
+          "links": [
+            1
+          ],
+          "shape": 3
+        }
       ],
       "properties": {},
       "widgets_values": [
-        null,  // audio input (load from file)
+        null,
         "A beautiful electronic pop song with synthesizer melodies and drum machine beats",
         "./training_samples",
         "[Instrumental]",
@@ -27,28 +40,61 @@
     {
       "id": 2,
       "type": "Load Audio",
-      "pos": [50, 50],
-      "size": {"0": 320, "1": 100},
+      "pos": [
+        50,
+        50
+      ],
+      "size": {
+        "0": 320,
+        "1": 100
+      },
       "flags": {},
       "order": 1,
       "mode": 0,
       "outputs": [
-        {"name": "AUDIO", "type": "AUDIO", "links": [2], "shape": 3}
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            2
+          ],
+          "shape": 3
+        }
       ],
       "properties": {},
-      "widgets_values": ["path/to/your/audio1.wav"]
+      "widgets_values": [
+        "path/to/your/audio1.wav"
+      ]
     },
     {
       "id": 3,
       "type": "ACE-Step LoRA Prepare Training Data",
-      "pos": [450, 50],
-      "size": {"0": 400, "1": 700},
+      "pos": [
+        450,
+        50
+      ],
+      "size": {
+        "0": 400,
+        "1": 700
+      },
       "flags": {},
       "order": 2,
       "mode": 0,
       "outputs": [
-        {"name": "tensor_dir", "type": "STRING", "links": [3], "shape": 3},
-        {"name": "status", "type": "STRING", "links": null, "shape": 3}
+        {
+          "name": "tensor_dir",
+          "type": "STRING",
+          "links": [
+            3
+          ],
+          "shape": 3
+        },
+        {
+          "name": "status",
+          "type": "STRING",
+          "links": null,
+          "shape": 3
+        }
       ],
       "properties": {},
       "widgets_values": [
@@ -74,14 +120,32 @@
     {
       "id": 4,
       "type": "ACE-Step LoRA Train",
-      "pos": [900, 50],
-      "size": {"0": 400, "1": 900},
+      "pos": [
+        900,
+        50
+      ],
+      "size": {
+        "0": 400,
+        "1": 900
+      },
       "flags": {},
       "order": 3,
       "mode": 0,
       "outputs": [
-        {"name": "lora_info", "type": "ACE_STEP_LORA_INFO", "links": [4], "shape": 3},
-        {"name": "training_log", "type": "STRING", "links": null, "shape": 3}
+        {
+          "name": "lora_info",
+          "type": "ACE_STEP_LORA_INFO",
+          "links": [
+            4
+          ],
+          "shape": 3
+        },
+        {
+          "name": "training_log",
+          "type": "STRING",
+          "links": null,
+          "shape": 3
+        }
       ],
       "properties": {},
       "widgets_values": [
@@ -106,15 +170,38 @@
     {
       "id": 5,
       "type": "ACE-Step Text to Music",
-      "pos": [1400, 50],
-      "size": {"0": 400, "1": 800},
+      "pos": [
+        1400,
+        50
+      ],
+      "size": {
+        "0": 400,
+        "1": 800
+      },
       "flags": {},
       "order": 4,
       "mode": 0,
       "outputs": [
-        {"name": "audio", "type": "AUDIO", "links": [5], "shape": 3},
-        {"name": "audio_path", "type": "STRING", "links": null, "shape": 3},
-        {"name": "metadata", "type": "STRING", "links": null, "shape": 3}
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            5
+          ],
+          "shape": 3
+        },
+        {
+          "name": "audio_path",
+          "type": "STRING",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "metadata",
+          "type": "STRING",
+          "links": null,
+          "shape": 3
+        }
       ],
       "properties": {},
       "widgets_values": [
@@ -127,7 +214,7 @@
         -1,
         8,
         "auto",
-        null,  // lora_info input
+        null,
         "",
         0,
         "",
@@ -146,74 +233,158 @@
     {
       "id": 6,
       "type": "Preview Audio",
-      "pos": [1850, 50],
-      "size": {"0": 400, "1": 300},
+      "pos": [
+        1850,
+        50
+      ],
+      "size": {
+        "0": 400,
+        "1": 300
+      },
       "flags": {},
       "order": 5,
       "mode": 0,
       "outputs": [],
       "properties": {},
-      "widgets_values": [[]]
+      "widgets_values": [
+        []
+      ]
     },
     {
       "id": 7,
       "type": "Show Text",
-      "pos": [450, 800],
-      "size": {"0": 400, "1": 200},
+      "pos": [
+        450,
+        800
+      ],
+      "size": {
+        "0": 400,
+        "1": 200
+      },
       "flags": {},
       "order": 6,
       "mode": 0,
       "outputs": [],
       "properties": {},
-      "widgets_values": ["", "Prepare Training Data Status"]
+      "widgets_values": [
+        "",
+        "Prepare Training Data Status"
+      ]
     },
     {
       "id": 8,
       "type": "Show Text",
-      "pos": [900, 950],
-      "size": {"0": 400, "1": 200},
+      "pos": [
+        900,
+        950
+      ],
+      "size": {
+        "0": 400,
+        "1": 200
+      },
       "flags": {},
       "order": 7,
       "mode": 0,
       "outputs": [],
       "properties": {},
-      "widgets_values": ["", "Training Log"]
+      "widgets_values": [
+        "",
+        "Training Log"
+      ]
     },
     {
       "id": 9,
       "type": "Note",
-      "pos": [50, 700],
-      "size": {"0": 350, "1": 200},
+      "pos": [
+        50,
+        700
+      ],
+      "size": {
+        "0": 350,
+        "1": 200
+      },
       "flags": {},
       "order": 8,
       "mode": 0,
       "outputs": [],
-      "properties": {"text": "## LoRA Training Workflow\n\n### Step 1: Prepare Training Data\n- Load your audio files\n- Provide captions (descriptions) for each\n- Add metadata (BPM, key, lyrics, language)\n- Run Prepare Training Data to create tensors\n\n### Step 2: Train LoRA\n- Set training parameters (rank, alpha, epochs)\n- Run training (this will take time)\n- Monitor progress in the training log\n\n### Step 3: Test Trained LoRA\n- Connect lora_info output to Text to Music\n- Generate music with your custom style!\n\n### Tips:\n- Start with few samples (10-20)\n- Use lora_rank=64, lora_alpha=128 for most cases\n- Train for 1000 epochs or until loss plateaus\n- Use turbo config for faster training"}
+      "properties": {
+        "text": "## LoRA Training Workflow\n\n### Step 1: Prepare Training Data\n- Load your audio files\n- Provide captions (descriptions) for each\n- Add metadata (BPM, key, lyrics, language)\n- Run Prepare Training Data to create tensors\n\n### Step 2: Train LoRA\n- Set training parameters (rank, alpha, epochs)\n- Run training (this will take time)\n- Monitor progress in the training log\n\n### Step 3: Test Trained LoRA\n- Connect lora_info output to Text to Music\n- Generate music with your custom style!\n\n### Tips:\n- Start with few samples (10-20)\n- Use lora_rank=64, lora_alpha=128 for most cases\n- Train for 1000 epochs or until loss plateaus\n- Use turbo config for faster training"
+      }
     }
   ],
   "links": [
-    [1, 1, 0, 7, 0, "STRING"],
-    [2, 2, 0, 1, 0, "AUDIO"],
-    [3, 3, 0, 4, 0, "STRING"],
-    [4, 4, 0, 5, 0, "ACE_STEP_LORA_INFO"],
-    [5, 5, 0, 6, 0, "AUDIO"]
+    [
+      1,
+      1,
+      0,
+      7,
+      0,
+      "STRING"
+    ],
+    [
+      2,
+      2,
+      0,
+      1,
+      0,
+      "AUDIO"
+    ],
+    [
+      3,
+      3,
+      0,
+      4,
+      0,
+      "STRING"
+    ],
+    [
+      4,
+      4,
+      0,
+      5,
+      0,
+      "ACE_STEP_LORA_INFO"
+    ],
+    [
+      5,
+      5,
+      0,
+      6,
+      0,
+      "AUDIO"
+    ]
   ],
   "groups": [
     {
       "title": "Step 1: Prepare Training Data",
-      "bounding": [30, 10, 820, 900],
+      "bounding": [
+        30,
+        10,
+        820,
+        900
+      ],
       "color": "#3f789e",
       "font_size": 24
     },
     {
       "title": "Step 2: Train LoRA",
-      "bounding": [870, 10, 450, 1150],
+      "bounding": [
+        870,
+        10,
+        450,
+        1150
+      ],
       "color": "#8f8f2a",
       "font_size": 24
     },
     {
       "title": "Step 3: Test Trained Model",
-      "bounding": [1370, 10, 900, 850],
+      "bounding": [
+        1370,
+        10,
+        900,
+        850
+      ],
       "color": "#2a8f3f",
       "font_size": 24
     }
