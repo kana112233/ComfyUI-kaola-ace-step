@@ -125,6 +125,45 @@ if ACESTEP_AVAILABLE:
     AceStepHandler.process_src_audio = patched_process_src_audio
 
     # --------------------------------------------------------------------------------
+    # MonkeyPatch torchaudio.load in training module to use soundfile
+    # This fixes libtorchcodec loading issues during LoRA training
+    # --------------------------------------------------------------------------------
+    try:
+        import acestep.training.dataset_builder as dataset_builder
+        import torchaudio
+
+        # Create a replacement load function using soundfile
+        _original_torchaudio_load = torchaudio.load
+
+        def patched_torchaudio_load_audio(filepath, *args, **kwargs):
+            """Replacement for torchaudio.load using soundfile for compatibility."""
+            try:
+                # Use soundfile to load audio
+                audio_np, sr = sf.read(filepath, dtype='float32')
+
+                # Convert to torch tensor format: [channels, samples]
+                if audio_np.ndim == 1:
+                    audio = torch.from_numpy(audio_np).unsqueeze(0)
+                else:
+                    audio = torch.from_numpy(audio_np.T)
+
+                return audio, sr
+            except Exception as e:
+                print(f"[patched_torchaudio_load] Error loading {filepath}: {e}")
+                # Fallback to original torchaudio.load if soundfile fails
+                try:
+                    return _original_torchaudio_load(filepath, *args, **kwargs)
+                except Exception as e2:
+                    print(f"[patched_torchaudio_load] Original torchaudio also failed: {e2}")
+                    raise
+
+        # Replace torchaudio.load in the training module
+        torchaudio.load = patched_torchaudio_load
+        print("[MonkeyPatch] torchaudio.load patched to use soundfile for training")
+    except ImportError as e:
+        print(f"[MonkeyPatch] Could not patch training torchaudio.load: {e}")
+
+    # --------------------------------------------------------------------------------
     # MonkeyPatch LLM and Inference to fix missing lyrics issue
     # --------------------------------------------------------------------------------
     # MonkeyPatch LLM and Inference to fix missing lyrics and language consistency
