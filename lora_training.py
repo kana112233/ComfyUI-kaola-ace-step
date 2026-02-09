@@ -263,20 +263,22 @@ def apply_comfyui_training_patches():
 
 def apply_training_step_patch():
     """
-    Patch PreprocessedLoRAModule.training_step to preserve gradients.
-
-    The original code uses .float() which can detach the loss from the graph.
+    Patch PreprocessedLoRAModule.training_step to:
+    1. Preserve gradients (don't call .float() on loss)
+    2. Fix bfloat16 numpy conversion error in logging
     """
     try:
-        from acestep.training.trainer import PreprocessedLoRAModule
+        from acestep.training.trainer import PreprocessedLoRAModule, sample_discrete_timestep
 
         # Save original training_step
         _original_training_step = PreprocessedLoRAModule.training_step
 
         def patched_training_step(self, batch):
-            """Training step that preserves gradients in fp32 mode."""
+            """Training step that preserves gradients and fixes logging."""
             import torch.nn.functional as F
-            from acestep.training.trainer import sample_discrete_timestep
+            import logging
+
+            logger = logging.getLogger(__name__)
 
             # Get tensors from batch
             target_latents = batch["target_latents"].to(self.device)
@@ -287,40 +289,62 @@ def apply_training_step_patch():
 
             bsz = target_latents.shape[0]
 
+            # Use model's dtype for consistency
+            model_dtype = None
+            for param in self.model.parameters():
+                model_dtype = param.dtype
+                break
+            if model_dtype is None:
+                model_dtype = torch.bfloat16  # Default for ACE-Step
+
             # Flow matching: sample noise x1 and interpolate with data x0
             x1 = torch.randn_like(target_latents)
             x0 = target_latents
 
-            # Sample timesteps (will use float32 due to our timestep patch)
-            t, r = sample_discrete_timestep(bsz, self.device, torch.float32)
+            # Sample timesteps using model's dtype (NOT float32)
+            t, r = sample_discrete_timestep(bsz, self.device, model_dtype)
             t_ = t.unsqueeze(-1).unsqueeze(-1)
 
             # Interpolate: x_t = t * x1 + (1 - t) * x0
             xt = t_ * x1 + (1.0 - t_) * x0
 
-            # Forward through decoder (no autocast for fp32)
-            decoder_outputs = self.model.decoder(
-                hidden_states=xt,
-                timestep=t,
-                timestep_r=r,
-                attention_mask=attention_mask,
-                encoder_hidden_states=encoder_hidden_states,
-                encoder_attention_mask=encoder_attention_mask,
-                context_latents=context_latents,
-            )
+            # Use autocast with the appropriate dtype
+            _device_type = self.device if isinstance(self.device, str) else self.device.type
+            _autocast_dtype = torch.float16 if _device_type == "mps" else model_dtype
 
-            # Flow matching loss: predict the flow field v = x1 - x0
-            flow = x1 - x0
-            diffusion_loss = F.mse_loss(decoder_outputs[0], flow)
+            with torch.autocast(device_type=_device_type, dtype=_autocast_dtype):
+                # Forward through decoder
+                decoder_outputs = self.model.decoder(
+                    hidden_states=xt,
+                    timestep=t,
+                    timestep_r=r,
+                    attention_mask=attention_mask,
+                    encoder_hidden_states=encoder_hidden_states,
+                    encoder_attention_mask=encoder_attention_mask,
+                    context_latents=context_latents,
+                )
 
-            # DON'T convert to float32 - it stays as is with gradients preserved
-            self.training_losses.append(diffusion_loss.item())
+                # Flow matching loss: predict the flow field v = x1 - x0
+                flow = x1 - x0
+                diffusion_loss = F.mse_loss(decoder_outputs[0], flow)
+
+            # Log with float32 conversion (fixes bfloat16 numpy error)
+            logger.debug(f"Training step:")
+            logger.debug(f"  target_latents: {target_latents.shape}")
+            logger.debug(f"  attention_mask: {attention_mask.shape}")
+            logger.debug(f"  encoder_hidden_states: {encoder_hidden_states.shape}")
+            logger.debug(f"  context_latents: {context_latents.shape}")
+            # Convert to float32 for logging (fixes numpy conversion error)
+            logger.debug(f"  Sampled t: {t.float().cpu().numpy()[:4]}... (showing first 4)")
+
+            # Keep loss in its dtype with gradients (NO .float() conversion)
+            self.training_losses.append(diffusion_loss.detach().float().item())
 
             return diffusion_loss
 
         # Apply the patch
         PreprocessedLoRAModule.training_step = patched_training_step
-        print("[MonkeyPatch] PreprocessedLoRAModule.training_step patched for fp32 gradients")
+        print("[MonkeyPatch] PreprocessedLoRAModule.training_step patched for gradient preservation")
         return True
 
     except Exception as e:
@@ -413,6 +437,5 @@ def apply_all_training_patches():
     """
     print("[MonkeyPatch] Applying training patches for ComfyUI compatibility...")
     apply_torchaudio_soundfile_patch()
-    apply_sample_timestep_patch()
     apply_training_step_patch()
     apply_comfyui_training_patches()
