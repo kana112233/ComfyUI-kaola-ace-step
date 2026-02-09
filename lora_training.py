@@ -261,6 +261,35 @@ def apply_comfyui_training_patches():
         return False
 
 
+def apply_sample_timestep_patch():
+    """
+    Patch sample_discrete_timestep to use float32 instead of bfloat16.
+
+    This fixes BFloat16 to numpy conversion errors in training_step logging.
+    """
+    try:
+        from acestep.training import trainer as trainer_module
+
+        # Save original function
+        _original_sample_discrete_timestep = trainer_module.sample_discrete_timestep
+
+        def patched_sample_discrete_timestep(bsz, device, dtype):
+            """Sample timesteps using float32 (ignores bfloat16 dtype parameter)."""
+            # Always use float32 for ComfyUI compatibility
+            return _original_sample_discrete_timestep(bsz, device, torch.float32)
+
+        # Apply the patch
+        trainer_module.sample_discrete_timestep = patched_sample_discrete_timestep
+        print("[MonkeyPatch] sample_discrete_timestep patched to use float32")
+        return True
+
+    except Exception as e:
+        print(f"[MonkeyPatch] Could not patch sample_discrete_timestep: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def apply_torchaudio_soundfile_patch():
     """
     Patch torchaudio.load to use soundfile instead.
@@ -315,4 +344,5 @@ def apply_all_training_patches():
     """
     print("[MonkeyPatch] Applying training patches for ComfyUI compatibility...")
     apply_torchaudio_soundfile_patch()
+    apply_sample_timestep_patch()
     apply_comfyui_training_patches()
