@@ -1909,7 +1909,7 @@ class ACE_STEP_CREATE_TRAINING_SAMPLE:
             },
             "optional": {
                 "lyrics": ("STRING", {"default": "[Instrumental]", "multiline": True, "tooltip": "Song lyrics. Use '[Instrumental]' for instrumental tracks."}),
-                "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Beats per minute. 0 for auto-detect."}),
+                "bpm": ("STRING", {"default": "0", "tooltip": "Beats per minute. Use '0' for auto-detect. Accepts string input from Understand node."}),
                 "keyscale": ("STRING", {"default": "", "tooltip": "Musical key (e.g., 'C Major', 'Am')."}),
                 "language": (["instrumental", "en", "zh", "ja", "ko", "es", "fr", "de"], {"default": "instrumental", "tooltip": "Language of the vocals."}),
             },
@@ -1926,7 +1926,7 @@ class ACE_STEP_CREATE_TRAINING_SAMPLE:
         caption: str,
         output_dir: str,
         lyrics: str = "[Instrumental]",
-        bpm: int = 0,
+        bpm: str = "0",
         keyscale: str = "",
         language: str = "instrumental",
     ) -> Tuple[str]:
