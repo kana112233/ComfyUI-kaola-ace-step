@@ -263,77 +263,38 @@ def apply_comfyui_training_patches():
 
 def apply_training_step_patch():
     """
-    Patch PreprocessedLoRAModule.training_step to preserve gradients.
+    Patch the logging in training_step to fix bfloat16 numpy conversion.
 
-    Removes autocast and .float() conversion that were detaching gradients.
-    Uses pure tensor operations in model's dtype for ComfyUI compatibility.
+    Keep original training_step logic intact (including autocast and .float()),
+    but fix the logging error by converting to float32 before numpy conversion.
     """
     try:
-        from acestep.training.trainer import PreprocessedLoRAModule, sample_discrete_timestep
+        from acestep.training import trainer as trainer_module
 
-        # Save original training_step
-        _original_training_step = PreprocessedLoRAModule.training_step
+        # Patch the logger to handle bfloat16 tensors
+        import logging
+        original_debug = logging.Logger.debug
 
-        def patched_training_step(self, batch):
-            """Training step that preserves gradients - NO autocast."""
-            import torch.nn.functional as F
+        def patched_debug(self, msg, *args, **kwargs):
+            """Convert bfloat16 tensors to float32 before formatting."""
+            # Check if msg contains tensors that need conversion
+            if args:
+                new_args = []
+                for arg in args:
+                    if hasattr(arg, 'dtype') and str(arg.dtype) == 'torch.bfloat16':
+                        # Convert to float32 for numpy compatibility
+                        if hasattr(arg, 'cpu'):
+                            arg = arg.float().cpu()
+                    new_args.append(arg)
+                args = tuple(new_args)
+            return original_debug(self, msg, *args, **kwargs)
 
-            # Get tensors from batch
-            target_latents = batch["target_latents"].to(self.device)
-            attention_mask = batch["attention_mask"].to(self.device)
-            encoder_hidden_states = batch["encoder_hidden_states"].to(self.device)
-            encoder_attention_mask = batch["encoder_attention_mask"].to(self.device)
-            context_latents = batch["context_latents"].to(self.device)
-
-            bsz = target_latents.shape[0]
-
-            # Use model's dtype for consistency
-            model_dtype = None
-            for param in self.model.parameters():
-                model_dtype = param.dtype
-                break
-            if model_dtype is None:
-                model_dtype = torch.float32  # Default to float32
-
-            # Flow matching: sample noise x1 and interpolate with data x0
-            x1 = torch.randn_like(target_latents, dtype=model_dtype)
-            x0 = target_latents
-
-            # Sample timesteps using model's dtype
-            t, r = sample_discrete_timestep(bsz, self.device, model_dtype)
-            t_ = t.unsqueeze(-1).unsqueeze(-1)
-
-            # Interpolate: x_t = t * x1 + (1 - t) * x0
-            xt = t_ * x1 + (1.0 - t_) * x0
-
-            # Forward through decoder (NO autocast - use raw operations)
-            decoder_outputs = self.model.decoder(
-                hidden_states=xt,
-                timestep=t,
-                timestep_r=r,
-                attention_mask=attention_mask,
-                encoder_hidden_states=encoder_hidden_states,
-                encoder_attention_mask=encoder_attention_mask,
-                context_latents=context_latents,
-            )
-
-            # Flow matching loss: predict the flow field v = x1 - x0
-            flow = x1 - x0
-            diffusion_loss = F.mse_loss(decoder_outputs[0], flow)
-
-            # Store loss (convert to float for logging)
-            self.training_losses.append(diffusion_loss.detach().float().item())
-
-            # Return loss WITH gradients (no dtype conversion)
-            return diffusion_loss
-
-        # Apply the patch
-        PreprocessedLoRAModule.training_step = patched_training_step
-        print("[MonkeyPatch] PreprocessedLoRAModule.training_step patched for gradient preservation")
+        logging.Logger.debug = patched_debug
+        print("[MonkeyPatch] Logger.debug patched to handle bfloat16 tensors")
         return True
 
     except Exception as e:
-        print(f"[MonkeyPatch] Could not patch training_step: {e}")
+        print(f"[MonkeyPatch] Could not patch logging: {e}")
         import traceback
         traceback.print_exc()
         return False
