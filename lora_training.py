@@ -263,38 +263,88 @@ def apply_comfyui_training_patches():
 
 def apply_training_step_patch():
     """
-    Patch the logging in training_step to fix bfloat16 numpy conversion.
+    Patch training_step to fix bfloat16 numpy conversion in logging.
 
-    Keep original training_step logic intact (including autocast and .float()),
-    but fix the logging error by converting to float32 before numpy conversion.
+    Directly modifies the problematic line that converts bfloat16 to numpy.
     """
     try:
-        from acestep.training import trainer as trainer_module
+        from acestep.training.trainer import PreprocessedLoRAModule
+        import torch
+        import torch.nn.functional as F
+        from acestep.training.trainer import sample_discrete_timestep
 
-        # Patch the logger to handle bfloat16 tensors
-        import logging
-        original_debug = logging.Logger.debug
+        # Save original
+        _original_training_step = PreprocessedLoRAModule.training_step
 
-        def patched_debug(self, msg, *args, **kwargs):
-            """Convert bfloat16 tensors to float32 before formatting."""
-            # Check if msg contains tensors that need conversion
-            if args:
-                new_args = []
-                for arg in args:
-                    if hasattr(arg, 'dtype') and str(arg.dtype) == 'torch.bfloat16':
-                        # Convert to float32 for numpy compatibility
-                        if hasattr(arg, 'cpu'):
-                            arg = arg.float().cpu()
-                    new_args.append(arg)
-                args = tuple(new_args)
-            return original_debug(self, msg, *args, **kwargs)
+        def patched_training_step(self, batch):
+            """Training step with fixed logging for bfloat16."""
+            import logging
+            logger = logging.getLogger(__name__)
 
-        logging.Logger.debug = patched_debug
-        print("[MonkeyPatch] Logger.debug patched to handle bfloat16 tensors")
+            # Get tensors from batch
+            target_latents = batch["target_latents"].to(self.device)
+            attention_mask = batch["attention_mask"].to(self.device)
+            encoder_hidden_states = batch["encoder_hidden_states"].to(self.device)
+            encoder_attention_mask = batch["encoder_attention_mask"].to(self.device)
+            context_latents = batch["context_latents"].to(self.device)
+
+            bsz = target_latents.shape[0]
+
+            # Use autocast (like original)
+            _device_type = self.device if isinstance(self.device, str) else self.device.type
+            _autocast_dtype = torch.float16 if _device_type == "mps" else torch.bfloat16
+
+            with torch.autocast(device_type=_device_type, dtype=_autocast_dtype):
+                # Flow matching: sample noise x1 and interpolate with data x0
+                x1 = torch.randn_like(target_latents)
+                x0 = target_latents
+
+                # Sample timesteps from discrete turbo shift=3 schedule (8 steps)
+                t, r = sample_discrete_timestep(bsz, self.device, torch.bfloat16)
+                t_ = t.unsqueeze(-1).unsqueeze(-1)
+
+                # Interpolate: x_t = t * x1 + (1 - t) * x0
+                xt = t_ * x1 + (1.0 - t_) * x0
+
+                # Forward through decoder (distilled turbo model, no CFG)
+                decoder_outputs = self.model.decoder(
+                    hidden_states=xt,
+                    timestep=t,
+                    timestep_r=r,
+                    attention_mask=attention_mask,
+                    encoder_hidden_states=encoder_hidden_states,
+                    encoder_attention_mask=encoder_attention_mask,
+                    context_latents=context_latents,
+                )
+
+                # Flow matching loss: predict the flow field v = x1 - x0
+                flow = x1 - x0
+                diffusion_loss = F.mse_loss(decoder_outputs[0], flow)
+
+            # Log with FIX: convert t to float32 before numpy
+            logger.debug(f"Training step:")
+            logger.debug(f"  target_latents: {target_latents.shape}")
+            logger.debug(f"  attention_mask: {attention_mask.shape}")
+            logger.debug(f"  encoder_hidden_states: {encoder_hidden_states.shape}")
+            logger.debug(f"  context_latents: {context_latents.shape}")
+            # FIX: Convert to float32 FIRST, then to numpy
+            t_for_log = t.float().cpu()
+            logger.debug(f"  Sampled t: {t_for_log.numpy()[:4]}... (showing first 4)")
+
+            # Convert loss to float32 (like original, but DON'T return it)
+            loss_item = diffusion_loss.float().item()
+            self.training_losses.append(loss_item)
+
+            # Return the loss WITHOUT .float() - keep it with gradients!
+            return diffusion_loss
+
+        # Apply the patch
+        PreprocessedLoRAModule.training_step = patched_training_step
+        print("[MonkeyPatch] training_step patched: fixed logging, kept gradients")
         return True
 
     except Exception as e:
-        print(f"[MonkeyPatch] Could not patch logging: {e}")
+        print(f"[MonkeyPatch] Could not patch training_step: {e}")
         import traceback
         traceback.print_exc()
         return False
