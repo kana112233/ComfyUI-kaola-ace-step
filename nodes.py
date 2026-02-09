@@ -58,6 +58,8 @@ from acestep_common import (
     DEVICES,
     DOWNLOAD_SOURCES,
     QUANTIZATION_OPTIONS,
+    KEYSCALE_OPTIONS,
+    TIMESIGNATURE_OPTIONS,
 )
 
 try:
@@ -579,8 +581,8 @@ class ACE_STEP_TEXT_TO_MUSIC:
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Song lyrics. Leave empty for automatic generation by the language model."}),
                 "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Beats per minute. 0 for automatic detection."}),
-                "keyscale": ("STRING", {"default": "", "tooltip": "Musical key and scale (e.g., C Major)."}),
-                "timesignature": ("STRING", {"default": "", "tooltip": "Musical time signature (e.g., 4/4)."}),
+                "keyscale": (KEYSCALE_OPTIONS, {"default": "auto", "tooltip": "Musical key and scale. Select 'auto' for automatic detection by the language model."}),
+                "timesignature": (TIMESIGNATURE_OPTIONS, {"default": "auto", "tooltip": "Time signature: 2/4, 3/4, 4/4, or 6/8. Select 'auto' for automatic detection."}),
                 "vocal_language": ("STRING", {"default": "unknown", "tooltip": "Vocal language (e.g., zh, en, ja, auto, unknown). Accepts string input from CreateSample node."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "Strength of prompt following."}),
@@ -677,7 +679,7 @@ class ACE_STEP_TEXT_TO_MUSIC:
                 "LM is needed because:\n"
                 f"  - Lyrics: {'will be generated' if not lyrics and not instrumental else 'provided or instrumental'}\n"
                 f"  - BPM: {'will be detected' if bpm == 0 else 'provided'}\n"
-                f"  - Key: {'will be generated' if not keyscale else 'provided'}\n"
+                f"  - Key: {'will be generated' if keyscale == 'auto' else 'provided'}\n"
                 f"  - Thinking: {'enabled' if thinking else 'disabled'}\n"
                 "\n"
                 "To fix:\n"
@@ -700,8 +702,8 @@ class ACE_STEP_TEXT_TO_MUSIC:
             instrumental=instrumental,
             duration=duration if duration > 0 else -1.0,
             bpm=bpm if bpm > 0 else None,
-            keyscale=keyscale,
-            timesignature=timesignature,
+            keyscale=keyscale if keyscale != "auto" else None,
+            timesignature=timesignature if timesignature != "auto" else None,
             vocal_language=vocal_language,
             inference_steps=inference_steps,
             seed=seed,
@@ -789,8 +791,8 @@ class ACE_STEP_COVER:
                 "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown", "tooltip": "Target language."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Instrumental mode."}),
                 "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Target BPM (0 for keep original)."}),
-                "keyscale": ("STRING", {"default": "", "tooltip": "Musical key."}),
-                "timesignature": ("STRING", {"default": "", "tooltip": "Time signature."}),
+                "keyscale": (KEYSCALE_OPTIONS, {"default": "auto", "tooltip": "Musical key. Select 'auto' to keep original or let LM decide."}),
+                "timesignature": (TIMESIGNATURE_OPTIONS, {"default": "auto", "tooltip": "Time signature: 2/4, 3/4, 4/4, or 6/8. Select 'auto' to keep original."}),
                 "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Show LLM reasoning."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output format."}),
@@ -886,7 +888,7 @@ class ACE_STEP_COVER:
             needs_lm = (
                 (not lyrics and not instrumental) or  # Need to generate lyrics
                 bpm == 0 or  # Need to detect BPM
-                not keyscale or  # Need to generate key
+                keyscale == "auto" or  # Need to generate key
                 thinking  # Need CoT reasoning
             )
             if needs_lm and not getattr(llm_handler, 'llm_initialized', False):
@@ -908,8 +910,8 @@ class ACE_STEP_COVER:
                 instrumental=instrumental,
                 vocal_language=vocal_language,
                 bpm=bpm if bpm > 0 else None,
-                keyscale=keyscale,
-                timesignature=timesignature,
+                keyscale=keyscale if keyscale != "auto" else None,
+                timesignature=timesignature if timesignature != "auto" else None,
                 audio_cover_strength=audio_cover_strength,
                 inference_steps=inference_steps,
                 guidance_scale=guidance_scale,

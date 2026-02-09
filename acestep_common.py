@@ -131,3 +131,15 @@ DOWNLOAD_SOURCES = ["auto", "huggingface", "modelscope"]
 AUDIO_FORMATS = ["flac", "mp3", "wav"]
 LANGUAGES = ["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt", "nl", "tr", "pl", "ar", "vi", "th"]
 QUANTIZATION_OPTIONS = ["None", "int8_weight_only"]
+
+# Musical key and scale options for music generation
+# Format: "{root} {quality}" where root is the note and quality is major/minor
+KEYSCALE_OPTIONS = [
+    "auto",  # Let LM auto-detect/generate
+    *[f"{root} {quality}"
+      for quality in ["major", "minor"]
+      for root in ["C", "C#", "Db", "D", "D#", "Eb", "E", "F", "F#", "Gb", "G", "G#", "Ab", "A", "A#", "Bb", "B"]]
+]
+
+# Time signature options (represents beats per measure)
+TIMESIGNATURE_OPTIONS = ["auto", "2", "3", "4", "6"]  # 2/4, 3/4, 4/4, 6/8
