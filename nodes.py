@@ -1802,6 +1802,10 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
         """Train LoRA adapter from preprocessed tensors."""
 
         import os
+        import torch
+
+        # Ensure gradients are enabled (ComfyUI runs in no_grad by default)
+        torch.set_grad_enabled(True)
 
         # Validate tensor directory
         if not os.path.exists(tensor_dir):
