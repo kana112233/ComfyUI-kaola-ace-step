@@ -1972,12 +1972,18 @@ class ACE_STEP_TYPE_ADAPTER(ACE_STEP_BASE):
         # Set config from model if available
         if hasattr(dit_model, 'config'):
             dit_handler.config = dit_model.config
+            # Ensure is_turbo attribute exists
+            if not hasattr(dit_handler.config, 'is_turbo'):
+                model_name = getattr(dit_handler.config, 'name_or_path', '') or ''
+                dit_handler.config.is_turbo = 'turbo' in model_name.lower()
         else:
-            # Create a minimal config
+            # Create a minimal config with is_turbo attribute
             dit_handler.config = type('obj', (object,), {
                 'hidden_size': getattr(dit_model, 'hidden_size', 2048),
                 'num_attention_heads': getattr(dit_model, 'num_attention_heads', 32),
                 'num_hidden_layers': getattr(dit_model, 'num_hidden_layers', 24),
+                'is_turbo': True,  # ACE-Step 1.5 models are turbo by default
+                'name_or_path': '',  # Placeholder
             })()
 
         dit_handler.quantization = None
