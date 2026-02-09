@@ -1863,12 +1863,11 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
                         
                     self._debug_logged = True
                     
-                loss = super().training_step(batch)
                 
-                if not getattr(self, '_loss_debug_logged', False):
-                     print(f"  Loss Grad Fn: {loss.grad_fn}")
-                     self._loss_debug_logged = True
-                     
+                # Forward using robustness patch (this fixes dtype and no_grad issues)
+                from .lora_training import patched_training_step
+                loss = patched_training_step(self, batch)
+                
                 return loss
 
         class SafeLoRATrainer(trainer_mod.LoRATrainer):
