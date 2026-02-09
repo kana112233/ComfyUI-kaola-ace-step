@@ -1803,9 +1803,21 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
 
         import os
         import torch
+        from acestep.training import trainer
 
         # Ensure gradients are enabled (ComfyUI runs in no_grad by default)
         torch.set_grad_enabled(True)
+
+        # MONKEY PATCH: Inject gradient enablement into the training step
+        # This is required because ComfyUI/Fabric might reset the grad state in threads
+        if not hasattr(trainer.PreprocessedLoRAModule, 'original_training_step'):
+            trainer.PreprocessedLoRAModule.original_training_step = trainer.PreprocessedLoRAModule.training_step
+        
+        def patched_step(self, *args, **kwargs):
+            torch.set_grad_enabled(True)
+            return self.original_training_step(*args, **kwargs)
+        
+        trainer.PreprocessedLoRAModule.training_step = patched_step
 
         # Validate tensor directory
         if not os.path.exists(tensor_dir):
