@@ -1814,6 +1814,11 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
                 # FORCE ENABLE GRADIENTS
                 torch.set_grad_enabled(True)
                 
+                # FORCE TRAIN MODE
+                self.model.train()
+                if hasattr(self.model, 'decoder'):
+                    self.model.decoder.train()
+                
                 # Debug Info
                 if not getattr(self, '_debug_logged', False):
                     print(f"[ACE_STEP DEBUG] training_step start")
