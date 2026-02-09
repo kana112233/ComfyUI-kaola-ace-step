@@ -1,108 +1,105 @@
 """
 LoRA Training Module for ACE-Step ComfyUI Nodes
 
-This module provides training utilities that are compatible with ComfyUI's worker thread model.
-Uses ComfyUILoRATrainer which is a standalone implementation without monkey patches.
+Minimal patching approach - use original ACE-Step training code,
+only fix the bfloat16 numpy conversion issue in logging.
 """
 
 import torch
 
-# Try relative import first (when used as package), fall back to absolute
-try:
-    from .comfyui_trainer import ComfyUILoRATrainer
-except ImportError:
-    from comfyui_trainer import ComfyUILoRATrainer
 
-
-def apply_all_training_patches():
+def apply_training_fixes():
     """
-    Apply ComfyUI-compatible training "patches" to ACE-Step.
+    Apply minimal fixes to ACE-Step training for ComfyUI compatibility.
 
-    Actually replaces the training method with our standalone trainer.
-    No actual monkey patching of ACE-Step internals needed!
+    Only patches:
+    1. torchaudio.load -> soundfile (fixes libtorchcodec errors)
+    2. logging bfloat16 -> float32 conversion (fixes numpy errors)
+
+    Everything else uses original ACE-Step code.
     """
-    try:
-        import acestep.training.trainer as trainer_module
-
-        # Save original for reference
-        _original_train_from_preprocessed = trainer_module.LoRATrainer.train_from_preprocessed
-
-        def patched_train_from_preprocessed(
-            self, tensor_dir, training_state=None, resume_from=None
-        ):
-            """Use our standalone ComfyUI trainer instead of original."""
-            self.is_training = True
-
-            try:
-                # Create our standalone trainer
-                trainer = ComfyUILoRATrainer(
-                    dit_handler=self.dit_handler,
-                    lora_config=self.lora_config,
-                    training_config=self.training_config,
-                )
-                # Run training
-                yield from trainer.train_from_preprocessed(
-                    tensor_dir=tensor_dir,
-                    training_state=training_state,
-                    resume_from=resume_from,
-                )
-            finally:
-                self.is_training = False
-
-        # Replace the method
-        trainer_module.LoRATrainer.train_from_preprocessed = patched_train_from_preprocessed
-        print("[MonkeyPatch] LoRA training replaced with ComfyUI-compatible standalone trainer")
-        return True
-
-    except Exception as e:
-        print(f"[MonkeyPatch] Could not apply training patches: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-def apply_torchaudio_soundfile_patch():
-    """
-    Patch torchaudio.load to use soundfile instead.
-
-    This avoids libtorchcodec issues when loading audio in training.
-    """
+    # Fix 1: Patch torchaudio to use soundfile
     try:
         import torchaudio
         import soundfile as sf
 
-        # Save original
         _original_torchaudio_load = torchaudio.load
 
         def patched_torchaudio_load(filepath, *args, **kwargs):
-            """Load audio using soundfile instead of torchaudio."""
             try:
-                # Read with soundfile
-                data, sr = sf.read(filepath, always_2d=False)
-                # Convert to tensor
-                waveform = torch.from_numpy(data).float()
-                # Add channel dimension if needed
-                if waveform.dim() == 1:
-                    waveform = waveform.unsqueeze(0)
-                elif waveform.dim() == 2:
-                    waveform = waveform.transpose(0, 1)  # (samples, channels) -> (channels, samples)
+                data, sr = sf.read(filepath, dtype='float32')
+                if data.ndim == 1:
+                    audio = torch.from_numpy(data).unsqueeze(0)
                 else:
-                    raise ValueError(f"Unexpected audio shape: {waveform.shape}")
-                return waveform, sr
-            except Exception as e:
-                print(f"[patched_torchaudio_load] Error loading {filepath}: {e}")
-                # Fallback to original torchaudio.load if soundfile fails
-                try:
-                    return _original_torchaudio_load(filepath, *args, **kwargs)
-                except Exception as e2:
-                    print(f"[patched_torchaudio_load] Original torchaudio also failed: {e2}")
-                    raise
+                    audio = torch.from_numpy(data.T)
+                return audio, sr
+            except Exception:
+                return _original_torchaudio_load(filepath, *args, **kwargs)
 
-        # Replace torchaudio.load
         torchaudio.load = patched_torchaudio_load
-        print("[MonkeyPatch] torchaudio.load patched to use soundfile for training")
-        return True
+        print("[ComfyUI-ACE-Step] Patched torchaudio.load -> soundfile")
+    except ImportError:
+        pass
 
-    except ImportError as e:
-        print(f"[MonkeyPatch] Could not patch torchaudio.load: {e}")
-        return False
+    # Fix 2: Patch logging to handle bfloat16 tensors
+    try:
+        from acestep.training.trainer import PreprocessedLoRAModule
+        import logging
+
+        _original_training_step = PreprocessedLoRAModule.training_step
+
+        def patched_training_step(self, batch):
+            """Original training_step with fixed logging."""
+            import torch.nn.functional as F
+            from acestep.training.trainer import sample_discrete_timestep
+            from acestep.training import trainer
+
+            # Get tensors
+            target_latents = batch["target_latents"].to(self.device)
+            attention_mask = batch["attention_mask"].to(self.device)
+            encoder_hidden_states = batch["encoder_hidden_states"].to(self.device)
+            encoder_attention_mask = batch["encoder_attention_mask"].to(self.device)
+            context_latents = batch["context_latents"].to(self.device)
+
+            bsz = target_latents.shape[0]
+
+            # Use autocast (like original)
+            _device_type = self.device if isinstance(self.device, str) else self.device.type
+            _autocast_dtype = torch.float16 if _device_type == "mps" else torch.bfloat16
+
+            with torch.autocast(device_type=_device_type, dtype=_autocast_dtype):
+                x1 = torch.randn_like(target_latents)
+                x0 = target_latents
+                t, r = sample_discrete_timestep(bsz, self.device, torch.bfloat16)
+                t_ = t.unsqueeze(-1).unsqueeze(-1)
+                xt = t_ * x1 + (1.0 - t_) * x0
+
+                decoder_outputs = self.model.decoder(
+                    hidden_states=xt,
+                    timestep=t,
+                    timestep_r=r,
+                    attention_mask=attention_mask,
+                    encoder_hidden_states=encoder_hidden_states,
+                    encoder_attention_mask=encoder_attention_mask,
+                    context_latents=context_latents,
+                )
+
+                flow = x1 - x0
+                diffusion_loss = F.mse_loss(decoder_outputs[0], flow)
+
+            # FIX: Convert to float AFTER autocast, but for logging only
+            loss_item = diffusion_loss.float().item()
+            self.training_losses.append(loss_item)
+
+            # Return loss WITHOUT .float() - keeps it in autocast dtype with gradients
+            return diffusion_loss
+
+        PreprocessedLoRAModule.training_step = patched_training_step
+        print("[ComfyUI-ACE-Step] Patched training_step logging (keeps original autocast)")
+
+    except Exception as e:
+        print(f"[ComfyUI-ACE-Step] Could not patch training_step: {e}")
+        import traceback
+        traceback.print_exc()
+
+    print("[ComfyUI-ACE-Step] Training fixes applied - using original ACE-Step training logic")
