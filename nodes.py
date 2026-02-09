@@ -1805,32 +1805,74 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
         import torch
         from acestep.training import trainer
 
-        # Ensure gradients are enabled (ComfyUI runs in no_grad by default)
-        torch.set_grad_enabled(True)
+        # -------------------------------------------------------------------------
+        # ROBUST TRAINING CLASSES (Fix for ComfyUI no_grad environment)
+        # -------------------------------------------------------------------------
+        class SafePreprocessedLoRAModule(trainer.PreprocessedLoRAModule):
+            """Subclass that forces gradients enabled during training step."""
+            def training_step(self, batch):
+                # FORCE ENABLE GRADIENTS
+                torch.set_grad_enabled(True)
+                return super().training_step(batch)
 
-        # MONKEY PATCH: Inject gradient enablement into the training step
-        # This is required because ComfyUI/Fabric might reset the grad state in threads
-        if not hasattr(trainer.PreprocessedLoRAModule, 'original_training_step'):
-            print("[ACE_STEP] Installing monkey patch for PreprocessedLoRAModule.training_step")
-            trainer.PreprocessedLoRAModule.original_training_step = trainer.PreprocessedLoRAModule.training_step
-        
-        def patched_step(self, *args, **kwargs):
-            torch.set_grad_enabled(True)
-            if not getattr(self, '_logged_grad_debug', False):
-                print(f"[ACE_STEP DEBUG] training_step called. Grad enabled: {torch.is_grad_enabled()}")
-                self._logged_grad_debug = True
-            
-            result = self.original_training_step(*args, **kwargs)
-            
-            if not getattr(self, '_logged_loss_debug', False):
-                print(f"[ACE_STEP DEBUG] Loss type: {type(result)}")
-                if isinstance(result, torch.Tensor):
-                    print(f"[ACE_STEP DEBUG] Loss requires_grad: {result.requires_grad}, Grad_fn: {result.grad_fn}")
-                self._logged_loss_debug = True
-                
-            return result
-        
-        trainer.PreprocessedLoRAModule.training_step = patched_step
+        class SafeLoRATrainer(trainer.LoRATrainer):
+            """Subclass that uses SafePreprocessedLoRAModule."""
+            def train_from_preprocessed(self, tensor_dir, training_state=None, resume_from=None):
+                self.is_training = True
+                try:
+                    # Validate tensor directory
+                    if not os.path.exists(tensor_dir):
+                        yield 0, 0.0, f"❌ Tensor directory not found: {tensor_dir}"
+                        return
+                    
+                    # Create SAFE training module
+                    self.module = SafePreprocessedLoRAModule(
+                        model=self.dit_handler.model,
+                        lora_config=self.lora_config,
+                        training_config=self.training_config,
+                        device=self.dit_handler.device,
+                        dtype=self.dit_handler.dtype,
+                    )
+                    
+                    # Everything else is the same as original, but we can't easily call super() 
+                    # because it hardcodes the class instantiation.
+                    # So we delegate to the _train methods which use self.module
+                    
+                    # Create data module
+                    from acestep.training.data_module import PreprocessedDataModule
+                    data_module = PreprocessedDataModule(
+                        tensor_dir=tensor_dir,
+                        batch_size=self.training_config.batch_size,
+                        num_workers=self.training_config.num_workers,
+                        pin_memory=self.training_config.pin_memory,
+                    )
+                    
+                    # Setup data
+                    data_module.setup('fit')
+                    
+                    if len(data_module.train_dataset) == 0:
+                        yield 0, 0.0, "❌ No valid samples found in tensor directory"
+                        return
+                    
+                    yield 0, 0.0, f"📂 Loaded {len(data_module.train_dataset)} preprocessed samples"
+
+                    # Disconnnect from ComfyUI's VRAM management temporarily implies we handle it? 
+                    # No, just run the loop.
+                    
+                    if trainer.LIGHTNING_AVAILABLE:
+                        yield from self._train_with_fabric(data_module, training_state, resume_from)
+                    else:
+                        yield from self._train_basic(data_module, training_state)
+                        
+                except Exception as e:
+                    trainer.logger.exception("Training failed")
+                    yield 0, 0.0, f"❌ Training failed: {str(e)}"
+                finally:
+                    self.is_training = False
+        # -------------------------------------------------------------------------
+
+        # Ensure gradients are enabled (ComfyUI runs in no_grad by default) inside this generic scope too
+        torch.set_grad_enabled(True)
 
         # Validate tensor directory
         if not os.path.exists(tensor_dir):
@@ -1896,10 +1938,10 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
         except Exception as e:
             return None, f"⚠️ Could not apply training fixes: {e}"
 
-        # Create trainer
-        from acestep.training.trainer import LoRATrainer
+        # Create trainer (Using our SAFE subclass)
+        # from acestep.training.trainer import LoRATrainer  <-- REPLACED
 
-        trainer = LoRATrainer(
+        trainer = SafeLoRATrainer(
             dit_handler=dit_handler,
             lora_config=lora_config,
             training_config=training_config,
