@@ -57,6 +57,11 @@ def patched_training_step(self, batch):
         # 4. Interpolate
         xt = t_ * x1 + (1.0 - t_) * x0
         
+        # CRITICAL FIX for LoRA + Gradient Checkpointing:
+        # If the model uses gradient checkpointing, the input must require grad 
+        # to allow gradients to flow back through the checkpoints.
+        xt.requires_grad_(True)
+        
         # 5. Connect to decoder
         # Handle both wrapped and unwrapped cases by checking for decoder attribute
         decoder_model = self.model.decoder if hasattr(self.model, 'decoder') else self.model
@@ -79,6 +84,12 @@ def patched_training_step(self, batch):
         flow = x1 - x0
         diffusion_loss = F.mse_loss(decoder_outputs[0], flow)
         
+        # Debug graph connection
+        if not getattr(self, '_grad_fn_logged', False):
+            print(f"[ACE_STEP DEBUG] Loss grad_fn: {diffusion_loss.grad_fn}")
+            print(f"  Input xt requires_grad: {xt.requires_grad}")
+            self._grad_fn_logged = True
+            
         # 8. Return float32 loss for stability
         return diffusion_loss.float()
         
