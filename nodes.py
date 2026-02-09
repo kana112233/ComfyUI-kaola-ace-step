@@ -135,7 +135,7 @@ if ACESTEP_AVAILABLE:
         # Create a replacement load function using soundfile
         _original_torchaudio_load = torchaudio.load
 
-        def patched_torchaudio_load_audio(filepath, *args, **kwargs):
+        def patched_torchaudio_load(filepath, *args, **kwargs):
             """Replacement for torchaudio.load using soundfile for compatibility."""
             try:
                 # Use soundfile to load audio
