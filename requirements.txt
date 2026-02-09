@@ -14,4 +14,7 @@ numpy>=1.24.0
 
 # Optional: for better audio handling
 librosa>=0.10.0
+
+# LoRA Training dependencies
 peft>=0.12.0
+lightning>=2.0.0
