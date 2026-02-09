@@ -168,102 +168,92 @@ if ACESTEP_AVAILABLE:
     # --------------------------------------------------------------------------------
     try:
         import torch
-        # Test if bf16 actually works in current environment
-        try:
-            test_tensor = torch.randn(1, 10, device='cuda', dtype=torch.bfloat16)
-            _ = test_tensor + 1
-            bf16_works = True
-        except Exception:
-            bf16_works = False
+        # Always patch for ComfyUI compatibility (bf16 doesn't work in worker threads)
+        print("[MonkeyPatch] Applying fp32 patch for ComfyUI compatibility...")
+        import acestep.training.trainer as trainer_module
 
-        if not bf16_works:
-            print("[MonkeyPatch] BFloat16 not supported in current environment, patching training...")
-            import acestep.training.trainer as trainer_module
+        # Patch the training_step method to remove autocast with bf16
+        _original_training_step = trainer_module.PreprocessedLoRAModule.training_step
 
-            # Patch the training_step method to remove autocast with bf16
-            _original_training_step = trainer_module.PreprocessedLoRAModule.training_step
+        def patched_training_step(self, batch):
+            """Training step without bf16 autocast."""
+            # Get tensors from batch (already on device from Fabric dataloader)
+            target_latents = batch["target_latents"].to(self.device)
+            attention_mask = batch["attention_mask"].to(self.device)
+            encoder_hidden_states = batch["encoder_hidden_states"].to(self.device)
+            context_latents = batch["context_latents"].to(self.device)
 
-            def patched_training_step(self, batch):
-                """Training step without bf16 autocast."""
-                # Get tensors from batch (already on device from Fabric dataloader)
-                target_latents = batch["target_latents"].to(self.device)
-                attention_mask = batch["attention_mask"].to(self.device)
-                encoder_hidden_states = batch["encoder_hidden_states"].to(self.device)
-                context_latents = batch["context_latents"].to(self.device)
+            bsz = target_latents.shape[0]
 
-                bsz = target_latents.shape[0]
+            # Use fp32 instead of bf16
+            x1 = torch.randn_like(target_latents)
+            x0 = target_latents
 
-                # Use fp32 instead of bf16
-                x1 = torch.randn_like(target_latents)
-                x0 = target_latents
+            # Sample timesteps using float32
+            from acestep.training.trainer import sample_discrete_timestep
+            t, r = sample_discrete_timestep(bsz, self.device, torch.float32)
+            t_ = t.unsqueeze(-1).unsqueeze(-1)
 
-                # Sample timesteps using float32
-                from acestep.training.trainer import sample_discrete_timestep
-                t, r = sample_discrete_timestep(bsz, self.device, torch.float32)
-                t_ = t.unsqueeze(-1).unsqueeze(-1)
+            # Interpolate
+            xt = t_ * x1 + (1.0 - t_) * x0
 
-                # Interpolate
-                xt = t_ * x1 + (1.0 - t_) * x0
+            # Forward pass (no autocast)
+            decoder_outputs = self.model.decoder(
+                hidden_states=xt,
+                timestep=t,
+                timestep_r=r,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=batch.get("encoder_attention_mask"),
+                context_latents=context_latents,
+            )
 
-                # Forward pass (no autocast)
-                decoder_outputs = self.model.decoder(
-                    hidden_states=xt,
-                    timestep=t,
-                    timestep_r=r,
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=batch.get("encoder_attention_mask"),
-                    context_latents=context_latents,
-                )
+            # Flow matching loss
+            flow = decoder_outputs[0]
+            loss = torch.nn.functional.mse_loss(flow, x1)
 
-                # Flow matching loss
-                flow = decoder_outputs[0]
-                loss = torch.nn.functional.mse_loss(flow, x1)
+            return loss
 
-                return loss
+        trainer_module.PreprocessedLoRAModule.training_step = patched_training_step
 
-            trainer_module.PreprocessedLoRAModule.training_step = patched_training_step
+        # Also patch _train_with_fabric to use fp32 precision
+        _original_train_with_fabric = trainer_module.LoRATrainer._train_with_fabric
 
-            # Also patch _train_with_fabric to use fp32 precision
-            _original_train_with_fabric = trainer_module.LoRATrainer._train_with_fabric
+        def patched_train_with_fabric(self, data_module, training_state, resume_from=None):
+            """Training without bf16."""
+            from lightning.fabric import Fabric
+            from lightning.fabric.loggers import TensorBoardLogger
+            import os
 
-            def patched_train_with_fabric(self, data_module, training_state, resume_from=None):
-                """Training without bf16."""
-                from lightning.fabric import Fabric
-                from lightning.fabric.loggers import TensorBoardLogger
-                import os
+            os.makedirs(self.training_config.output_dir, exist_ok=True)
 
-                os.makedirs(self.training_config.output_dir, exist_ok=True)
+            # Use fp32 precision
+            precision = "32"
+            print(f"[MonkeyPatch] Using precision: {precision}")
 
-                # Use fp32 precision
-                precision = "32"
-                print(f"[MonkeyPatch] Using precision: {precision}")
+            tb_logger = TensorBoardLogger(
+                root_dir=self.training_config.output_dir,
+                name="logs"
+            )
 
-                tb_logger = TensorBoardLogger(
-                    root_dir=self.training_config.output_dir,
-                    name="logs"
-                )
+            self.fabric = Fabric(
+                accelerator="auto",
+                devices=1,
+                precision=precision,
+                loggers=[tb_logger],
+            )
+            self.fabric.launch()
 
-                self.fabric = Fabric(
-                    accelerator="auto",
-                    devices=1,
-                    precision=precision,
-                    loggers=[tb_logger],
-                )
-                self.fabric.launch()
+            # Don't convert model to bf16
+            print("[MonkeyPatch] Skipping model.to(bfloat16) conversion")
 
-                # Don't convert model to bf16
-                print("[MonkeyPatch] Skipping model.to(bfloat16) conversion")
+            yield 0, 0.0, f"🚀 Starting training (precision: {precision})..."
 
-                yield 0, 0.0, f"🚀 Starting training (precision: {precision})..."
+            # Continue with original training logic
+            for result in _original_train_with_fabric.__get__(self, type(self))(data_module, training_state, resume_from):
+                yield result
 
-                # Continue with original training logic
-                for result in _original_train_with_fabric.__get__(self, type(self))(data_module, training_state, resume_from):
-                    yield result
-
-            trainer_module.LoRATrainer._train_with_fabric = patched_train_with_fabric
-            print("[MonkeyPatch] Training patched to use fp32 instead of bf16")
-        else:
-            print("[MonkeyPatch] BFloat16 is supported, no patching needed")
+        trainer_module.LoRATrainer._train_with_fabric = patched_train_with_fabric
+        print("[MonkeyPatch] Training patched to use fp32 instead of bf16")
     except Exception as e:
         print(f"[MonkeyPatch] Could not patch training: {e}")
         import traceback
