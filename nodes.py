@@ -1810,10 +1810,37 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
         # -------------------------------------------------------------------------
         class SafePreprocessedLoRAModule(trainer_mod.PreprocessedLoRAModule):
             """Subclass that forces gradients enabled during training step."""
+            def _unwrap_compiled_model(self, model):
+                """Recursively unwrap compiled/optimized models to get the raw nn.Module."""
+                # Unwrap torch.compile / OptimizedModule
+                if hasattr(model, "_orig_mod"):
+                    print(f"[ACE_STEP DEBUG] Unwrapping torch.compile _orig_mod")
+                    return self._unwrap_compiled_model(model._orig_mod)
+                
+                # Unwrap other potential wrappers (like DDP, etc)
+                if hasattr(model, "module"):
+                    print(f"[ACE_STEP DEBUG] Unwrapping .module wrapper")
+                    return self._unwrap_compiled_model(model.module)
+                
+                # Unwrap _forward_module (common in some compile backends)
+                if hasattr(model, "_forward_module"):
+                    print(f"[ACE_STEP DEBUG] Unwrapping _forward_module")
+                    return self._unwrap_compiled_model(model._forward_module)
+                    
+                return model
+
             def training_step(self, batch):
                 # FORCE ENABLE GRADIENTS
                 torch.set_grad_enabled(True)
                 
+                # Ensure we are working with the raw model, not a compiled one
+                # Compiled models might have captured a no_grad graph
+                if not getattr(self, '_unwrapped', False):
+                    self.model = self._unwrap_compiled_model(self.model)
+                    if hasattr(self.model, 'decoder'):
+                        self.model.decoder = self._unwrap_compiled_model(self.model.decoder)
+                    self._unwrapped = True
+
                 # FORCE TRAIN MODE
                 self.model.train()
                 if hasattr(self.model, 'decoder'):
