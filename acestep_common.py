@@ -48,12 +48,20 @@ _register_model_paths()
 
 
 def get_acestep_checkpoints() -> List[str]:
-    """Get available ACE-Step checkpoint directories"""
+    """Get available ACE-Step checkpoint directories
+
+    Returns both relative path (for backward compatibility) and full path.
+    """
     paths = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)
     result = []
+
+    # Add relative path first for backward compatibility with old workflows
+    result.append(ACESTEP_MODEL_NAME)
+
     for p in paths:
         if os.path.exists(p):
             result.append(p)
+
     return result if result else [ACESTEP_MODEL_NAME]
 
 
