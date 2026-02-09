@@ -60,6 +60,7 @@ from acestep_common import (
     QUANTIZATION_OPTIONS,
     KEYSCALE_OPTIONS,
     TIMESIGNATURE_OPTIONS,
+    LANGUAGES,
 )
 
 try:
@@ -583,7 +584,7 @@ class ACE_STEP_TEXT_TO_MUSIC:
                 "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Beats per minute. 0 for automatic detection."}),
                 "keyscale": (KEYSCALE_OPTIONS, {"default": "auto", "tooltip": "Musical key and scale. Select 'auto' for automatic detection by the language model."}),
                 "timesignature": (TIMESIGNATURE_OPTIONS, {"default": "auto", "tooltip": "Time signature: 2/4, 3/4, 4/4, or 6/8. Select 'auto' for automatic detection."}),
-                "vocal_language": ("STRING", {"default": "unknown", "tooltip": "Vocal language (e.g., zh, en, ja, auto, unknown). Accepts string input from CreateSample node."}),
+                "vocal_language": (LANGUAGES, {"default": "auto", "tooltip": "Vocal language for singing. Select 'auto' for automatic detection."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "Strength of prompt following."}),
                 "shift": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 5.0, "tooltip": "Sequence length scaling factor, default is 1.0."}),
@@ -788,7 +789,7 @@ class ACE_STEP_COVER:
             "optional": {
                 "lm": ("ACE_STEP_LM", {"tooltip": "Optional LM from LM_Loader node. Required for lyrics/metadata generation."}),
                 "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Optional lyrics."}),
-                "vocal_language": (["unknown", "auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "unknown", "tooltip": "Target language."}),
+                "vocal_language": (LANGUAGES, {"default": "auto", "tooltip": "Target vocal language. Select 'auto' to keep original or let LM decide."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Instrumental mode."}),
                 "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Target BPM (0 for keep original)."}),
                 "keyscale": (KEYSCALE_OPTIONS, {"default": "auto", "tooltip": "Musical key. Select 'auto' to keep original or let LM decide."}),
@@ -1159,7 +1160,7 @@ class ACE_STEP_SIMPLE_MODE:
             },
             "optional": {
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
-                "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
+                "vocal_language": (LANGUAGES, {"default": "auto", "tooltip": "Vocal language. Select 'auto' for automatic detection."}),
                 "thinking": ("BOOLEAN", {"default": True, "tooltip": "Whether to show the language model's Chain-of-Thought reasoning."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio file format."}),
                 "lora_info": ("ACE_STEP_LORA_INFO", {"tooltip": "Optional LoRA model information for style fine-tuning."}),
@@ -1400,7 +1401,7 @@ class ACE_STEP_CREATE_SAMPLE(ACE_STEP_BASE):
             "optional": {
                 "lm": ("ACE_STEP_LM", {"tooltip": "LM from LM_Loader node. Required for generating samples."}),
                 "instrumental": ("BOOLEAN", {"default": False, "tooltip": "Whether to generate instrumental music only (no vocals)."}),
-                "vocal_language": (["auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "bn"], {"default": "auto", "tooltip": "Vocal language (e.g., zh, en, ja)."}),
+                "vocal_language": (LANGUAGES, {"default": "auto", "tooltip": "Vocal language. Select 'auto' for automatic detection."}),
                 "top_k": ("INT", {"default": 50, "min": 0, "max": 1000, "tooltip": "Top-K filtering parameter for sampling."}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "tooltip": "Top-P (nucleus sampling) filtering parameter."}),
                 "temperature": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "tooltip": "Sampling temperature for the language model. 0.0 is most stable (recommended)."}),

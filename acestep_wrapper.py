@@ -596,6 +596,20 @@ def create_handler_from_wrapper(wrapper: ACEStepWrapper):
     handler.quantization = None
     handler.compiled = False
 
+    # Set handler.config from model.config, ensuring is_turbo attribute exists
+    if wrapper.model is not None and hasattr(wrapper.model, 'config'):
+        handler.config = wrapper.model.config
+        # Ensure is_turbo attribute exists (may not be in all model versions)
+        if not hasattr(handler.config, 'is_turbo'):
+            # Check if model name contains 'turbo' to determine is_turbo
+            model_name = getattr(handler.config, 'name_or_path', '') or ''
+            handler.config.is_turbo = 'turbo' in model_name.lower()
+    else:
+        # Fallback: create a simple config object with is_turbo
+        class SimpleConfig:
+            is_turbo = False  # Default to False for safety
+        handler.config = SimpleConfig()
+
     return handler
 
 

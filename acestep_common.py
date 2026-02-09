@@ -129,7 +129,8 @@ def get_available_peft_loras() -> List[str]:
 DEVICES = ["auto", "cuda", "cpu", "mps", "xpu"]
 DOWNLOAD_SOURCES = ["auto", "huggingface", "modelscope"]
 AUDIO_FORMATS = ["flac", "mp3", "wav"]
-LANGUAGES = ["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt", "nl", "tr", "pl", "ar", "vi", "th"]
+# Vocal language options for music generation
+LANGUAGES = ["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt", "nl", "pl", "tr", "vi", "cs", "fa", "id", "uk", "hu", "ar", "sv", "ro", "el", "th", "unknown"]
 QUANTIZATION_OPTIONS = ["None", "int8_weight_only"]
 
 # Musical key and scale options for music generation
