@@ -87,3 +87,9 @@ def patched_training_step(self, batch):
         import traceback
         traceback.print_exc()
         raise e
+
+# Legacy compatibility function
+# Since we now override training_step directly in SafePreprocessedLoRAModule,
+# we don't need to patch the external library.
+def apply_all_training_patches():
+    print("[ACE_STEP] Using inline training loop (patched_training_step). Legacy patches skipped.")
