@@ -1550,6 +1550,499 @@ class ACE_STEP_LORA_LOADER:
         },)
 
 
+class ACE_STEP_LORA_PREPARE_TRAINING_DATA(ACE_STEP_BASE):
+    """Prepare training data from audio files and metadata
+
+    This node preprocesses audio files with their metadata (caption, lyrics, etc.)
+    into tensor files that can be used for efficient LoRA training.
+
+    Input format:
+    - audio_files: Comma-separated list of audio file paths, OR load audio through ComfyUI
+    - captions: Comma-separated list of captions
+    - lyrics_list: Comma-separated list of lyrics (use [Instrumental] for no vocals)
+    - bpm_list: Comma-separated list of BPM values (use 0 for auto-detect)
+    - keyscale_list: Comma-separated list of keys (e.g., C Major, Am)
+    - language_list: Comma-separated list of languages (en, zh, instrumental)
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio_files": ("STRING", {"default": "", "multiline": True, "tooltip": "Comma-separated list of audio file paths OR use audio input connections"}),
+                "captions": ("STRING", {"default": "", "multiline": True, "tooltip": "Comma-separated list of captions/descriptions for each audio file. Use one caption per audio file."}),
+                "lyrics_list": ("STRING", {"default": "[Instrumental]", "multiline": True, "tooltip": "Comma-separated list of lyrics for each audio file. Use '[Instrumental]' for instrumental tracks."}),
+                "bpm_list": ("STRING", {"default": "0", "tooltip": "Comma-separated list of BPM values. Use '0' or leave empty for auto-detection."}),
+                "keyscale_list": ("STRING", {"default": "", "tooltip": "Comma-separated list of musical keys (e.g., 'C Major', 'Am')."}),
+                "language_list": ("STRING", {"default": "instrumental", "tooltip": "Comma-separated list of languages (e.g., 'en', 'zh', 'instrumental')."}),
+                "output_dir": ("STRING", {"default": "./datasets/preprocessed_tensors", "tooltip": "Directory to save preprocessed tensor files."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Model configuration to use."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform."}),
+            },
+            "optional": {
+                "audio_input_1": ("AUDIO", {"tooltip": "Optional: Connect audio directly from ComfyUI"}),
+                "audio_input_2": ("AUDIO", {}),
+                "audio_input_3": ("AUDIO", {}),
+                "audio_input_4": ("AUDIO", {}),
+                "custom_tag": ("STRING", {"default": "", "tooltip": "Custom tag to prepend/append to all captions (e.g., '8bit_retro')."}),
+                "tag_position": (["append", "prepend", "replace"], {"default": "append", "tooltip": "Where to place the custom tag in the caption."}),
+                "max_duration": ("FLOAT", {"default": 240.0, "min": 10.0, "max": 600.0, "tooltip": "Maximum audio duration in seconds. Longer audio will be truncated."}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("tensor_dir", "status")
+    FUNCTION = "prepare_training_data"
+    CATEGORY = "Audio/ACE-Step/Training"
+    OUTPUT_NODE = False
+
+    def prepare_training_data(
+        self,
+        audio_files: str,
+        captions: str,
+        lyrics_list: str,
+        bpm_list: str,
+        keyscale_list: str,
+        language_list: str,
+        output_dir: str,
+        checkpoint_dir: str,
+        config_path: str,
+        device: str,
+        audio_input_1: Optional[Dict] = None,
+        audio_input_2: Optional[Dict] = None,
+        audio_input_3: Optional[Dict] = None,
+        audio_input_4: Optional[Dict] = None,
+        custom_tag: str = "",
+        tag_position: str = "append",
+        max_duration: float = 240.0,
+    ) -> Tuple[str, str]:
+        """Prepare training data by preprocessing audio files to tensor files."""
+
+        import os
+
+        # Collect audio files from both string paths and audio inputs
+        audio_file_paths = []
+        audio_data_list = []
+
+        # From string input (file paths)
+        if audio_files:
+            for path in audio_files.split(","):
+                path = path.strip()
+                if path and os.path.exists(path):
+                    audio_file_paths.append(path)
+
+        # From audio input connections
+        for audio_input in [audio_input_1, audio_input_2, audio_input_3, audio_input_4]:
+            if audio_input is not None:
+                audio_data_list.append(audio_input)
+
+        # Save connected audio to temp files
+        for i, audio_data in enumerate(audio_data_list):
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False, dir=output_dir) as tmp:
+                temp_path = tmp.name
+                waveform = audio_data["waveform"].squeeze(0).numpy().T
+                import soundfile as sf
+                sf.write(temp_path, waveform, audio_data["sample_rate"])
+                audio_file_paths.append(temp_path)
+
+        if not audio_file_paths:
+            return "", "❌ No audio files provided. Please provide audio file paths OR connect audio inputs."
+
+        # Initialize handlers
+        dit_handler, llm_handler = self.initialize_handlers(
+            checkpoint_dir=checkpoint_dir,
+            config_path=config_path,
+            lm_model_path="acestep-5Hz-lm-1.7B",  # Required for text encoding
+            device=device,
+        )
+
+        # Parse input lists
+        caption_list = [c.strip() for c in captions.split(",") if c.strip()] if captions else []
+        lyrics_items = [l.strip() for l in lyrics_list.split(",") if l.strip()] if lyrics_list else []
+        bpm_items = [b.strip() for b in bpm_list.split(",") if b.strip()] if bpm_list else []
+        keyscale_items = [k.strip() for k in keyscale_list.split(",") if k.strip()] if keyscale_list else []
+        language_items = [lang.strip() for lang in language_list.split(",") if lang.strip()] if language_list else []
+
+        # Ensure we have captions for all audio files
+        num_audios = len(audio_file_paths)
+        if not caption_list:
+            caption_list = [""] * num_audios
+        if len(caption_list) < num_audios:
+            caption_list.extend([""] * (num_audios - len(caption_list)))
+
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Import training modules
+        try:
+            from acestep.training.dataset_builder import AudioSample, DatasetBuilder, DatasetMetadata
+        except ImportError:
+            return "", "❌ ACE-Step training modules not available. Please ensure ACE-Step is properly installed."
+
+        # Create dataset builder
+        builder = DatasetBuilder()
+        builder.metadata.name = "comfyui_training_dataset"
+        builder.metadata.custom_tag = custom_tag
+        builder.metadata.tag_position = tag_position
+
+        # Convert to AudioSample objects
+        samples = []
+        for i, audio_path in enumerate(audio_file_paths):
+            caption = caption_list[i] if i < len(caption_list) else ""
+            lyrics = lyrics_items[i] if i < len(lyrics_items) else "[Instrumental]"
+            bpm = int(bpm_items[i]) if i < len(bpm_items) and bpm_items[i].isdigit() else None
+            keyscale = keyscale_items[i] if i < len(keyscale_items) else ""
+            language = language_items[i] if i < len(language_items) else "instrumental"
+
+            sample = AudioSample(
+                audio_path=audio_path,
+                filename=os.path.basename(audio_path),
+                caption=caption,
+                lyrics=lyrics,
+                bpm=bpm,
+                keyscale=keyscale,
+                language=language,
+                is_instrumental=(lyrics == "[Instrumental]"),
+                labeled=True,
+            )
+            samples.append(sample)
+
+        builder.samples = samples
+
+        # Preprocess to tensors
+        output_paths, status = builder.preprocess_to_tensors(
+            dit_handler=dit_handler,
+            output_dir=output_dir,
+            max_duration=max_duration,
+        )
+
+        # Clean up temp files (only those we created)
+        for i, audio_data in enumerate(audio_data_list):
+            temp_path = os.path.join(output_dir, f"tmp{i}.wav")
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+
+        return output_dir, status
+
+
+class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
+    """Train LoRA adapter from preprocessed tensor files
+
+    This node performs LoRA fine-tuning on the DiT decoder using preprocessed
+    tensor files. Training uses Flow Matching with discrete timesteps.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "tensor_dir": ("STRING", {"default": "./datasets/preprocessed_tensors", "tooltip": "Directory containing preprocessed .pt tensor files."}),
+                "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights."}),
+                "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Model configuration (turbo recommended for training)."}),
+                "output_dir": ("STRING", {"default": "./lora_output", "tooltip": "Directory to save trained LoRA adapter."}),
+                "lora_rank": ("INT", {"default": 64, "min": 4, "max": 256, "tooltip": "LoRA rank (dimension of low-rank matrices). Higher = more capacity but slower."}),
+                "lora_alpha": ("INT", {"default": 128, "min": 4, "max": 512, "tooltip": "LoRA scaling factor. Typically 2x the rank."}),
+                "lora_dropout": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 0.5, "step": 0.05, "tooltip": "Dropout probability for LoRA layers."}),
+                "learning_rate": ("FLOAT", {"default": 3e-4, "min": 1e-6, "max": 1e-2, "tooltip": "Learning rate for training."}),
+                "train_epochs": ("INT", {"default": 1000, "min": 100, "max": 4000, "tooltip": "Number of training epochs."}),
+                "batch_size": ("INT", {"default": 1, "min": 1, "max": 8, "tooltip": "Training batch size."}),
+                "gradient_accumulation": ("INT", {"default": 1, "min": 1, "max": 16, "tooltip": "Gradient accumulation steps."}),
+                "save_every_n_epochs": ("INT", {"default": 200, "min": 50, "max": 1000, "tooltip": "Save checkpoint every N epochs."}),
+                "seed": ("INT", {"default": 42, "min": 0, "max": 0xFFFFFFFFffffffff, "tooltip": "Random seed for training."}),
+                "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform."}),
+            },
+            "optional": {
+                "resume_from": ("STRING", {"default": "", "tooltip": "Path to checkpoint directory to resume training from."}),
+                "target_modules": ("STRING", {"default": "q_proj,k_proj,v_proj,o_proj", "tooltip": "Comma-separated list of target modules for LoRA."}),
+            },
+        }
+
+    RETURN_TYPES = ("ACE_STEP_LORA_INFO", "STRING")
+    RETURN_NAMES = ("lora_info", "training_log")
+    FUNCTION = "train_lora"
+    CATEGORY = "Audio/ACE-Step/Training"
+    OUTPUT_NODE = True
+
+    def train_lora(
+        self,
+        tensor_dir: str,
+        checkpoint_dir: str,
+        config_path: str,
+        output_dir: str,
+        lora_rank: int,
+        lora_alpha: int,
+        lora_dropout: float,
+        learning_rate: float,
+        train_epochs: int,
+        batch_size: int,
+        gradient_accumulation: int,
+        save_every_n_epochs: int,
+        seed: int,
+        device: str,
+        resume_from: str = "",
+        target_modules: str = "q_proj,k_proj,v_proj,o_proj",
+    ) -> Tuple[Optional[Dict[str, Any]], str]:
+        """Train LoRA adapter from preprocessed tensors."""
+
+        import os
+
+        # Validate tensor directory
+        if not os.path.exists(tensor_dir):
+            return None, f"❌ Tensor directory not found: {tensor_dir}"
+
+        # Check for required dependencies
+        try:
+            from lightning.fabric import Fabric
+            from peft import get_peft_model, LoraConfig
+        except ImportError as e:
+            return None, f"❌ Missing required packages: {e}\nPlease install: pip install peft lightning"
+
+        # Initialize DiT handler (without LLM to save memory)
+        # Training only needs DiT handler, not LLM
+        dit_handler, _ = self.initialize_handlers(
+            checkpoint_dir=checkpoint_dir,
+            config_path=config_path,
+            lm_model_path="acestep-5Hz-lm-1.7B",  # Still needed for init but not for training
+            device=device,
+        )
+
+        # Check for incompatible settings
+        if getattr(dit_handler, 'offload_to_cpu', False):
+            return None, "❌ Offload to CPU is enabled - this will slow down training. Please disable it."
+        if getattr(dit_handler, 'compiled', False):
+            return None, "❌ Compile Model is enabled - this is incompatible with LoRA training."
+        if getattr(dit_handler, 'quantization', None) is not None:
+            return None, "❌ INT8 Quantization is enabled - this is incompatible with LoRA training."
+
+        # Unload LLM to free up memory for training
+        if self.llm_handler is not None:
+            self.llm_handler = None
+
+        # Create training configs
+        from acestep.training.configs import LoRAConfig, TrainingConfig
+
+        # Parse target modules
+        target_module_list = [m.strip() for m in target_modules.split(",") if m.strip()]
+
+        lora_config = LoRAConfig(
+            r=lora_rank,
+            alpha=lora_alpha,
+            dropout=lora_dropout,
+            target_modules=target_module_list,
+        )
+
+        training_config = TrainingConfig(
+            shift=3.0,  # Fixed for turbo model
+            num_inference_steps=8,  # Fixed for turbo model
+            learning_rate=learning_rate,
+            batch_size=batch_size,
+            gradient_accumulation_steps=gradient_accumulation,
+            max_epochs=train_epochs,
+            save_every_n_epochs=save_every_n_epochs,
+            seed=seed,
+            output_dir=output_dir,
+        )
+
+        # Create trainer
+        from acestep.training.trainer import LoRATrainer
+
+        trainer = LoRATrainer(
+            dit_handler=dit_handler,
+            lora_config=lora_config,
+            training_config=training_config,
+        )
+
+        # Run training
+        log_messages = []
+        training_state = {}
+
+        try:
+            for step, loss, status in trainer.train_from_preprocessed(
+                tensor_dir=tensor_dir,
+                training_state=training_state,
+                resume_from=resume_from if resume_from else None,
+            ):
+                log_messages.append(f"Step {step}: {status}")
+                print(f"[ACE_STEP_LORA_TRAIN] {status}")
+
+            final_status = log_messages[-1] if log_messages else "Training completed"
+
+            # Get the final LoRA path
+            final_lora_path = os.path.join(output_dir, "final")
+
+            if os.path.exists(final_lora_path):
+                lora_info = {
+                    "path": final_lora_path,
+                    "scale": 1.0,
+                }
+                return lora_info, "\n".join(log_messages)
+            else:
+                return None, "\n".join(log_messages) + "\n❌ LoRA output not found"
+
+        except Exception as e:
+            import traceback
+            error_msg = f"❌ Training failed: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ACE_STEP_LORA_TRAIN] {error_msg}")
+            return None, error_msg
+
+
+class ACE_STEP_CREATE_TRAINING_SAMPLE:
+    """Save a training sample to file for later use
+
+    Helper node to prepare individual training data items by saving
+    audio to a file with associated metadata. This creates a single
+    training sample that can be referenced by file path.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO", {"tooltip": "Audio file for training."}),
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Description of the music style."}),
+                "output_dir": ("STRING", {"default": "./training_samples", "tooltip": "Directory to save training samples."}),
+            },
+            "optional": {
+                "lyrics": ("STRING", {"default": "[Instrumental]", "multiline": True, "tooltip": "Song lyrics. Use '[Instrumental]' for instrumental tracks."}),
+                "bpm": ("INT", {"default": 0, "min": 0, "max": 300, "tooltip": "Beats per minute. 0 for auto-detect."}),
+                "keyscale": ("STRING", {"default": "", "tooltip": "Musical key (e.g., 'C Major', 'Am')."}),
+                "language": (["instrumental", "en", "zh", "ja", "ko", "es", "fr", "de"], {"default": "instrumental", "tooltip": "Language of the vocals."}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("sample_info",)
+    FUNCTION = "create_sample"
+    CATEGORY = "Audio/ACE-Step/Training"
+
+    def create_sample(
+        self,
+        audio: Dict[str, Any],
+        caption: str,
+        output_dir: str,
+        lyrics: str = "[Instrumental]",
+        bpm: int = 0,
+        keyscale: str = "",
+        language: str = "instrumental",
+    ) -> Tuple[str]:
+        """Create a single training sample by saving audio to file."""
+
+        import os
+        import json
+        import tempfile
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate unique filename
+        import time
+        timestamp = int(time.time() * 1000)
+        audio_filename = f"sample_{timestamp}.wav"
+        audio_path = os.path.join(output_dir, audio_filename)
+
+        # Save audio to file
+        waveform = audio["waveform"].squeeze(0).numpy().T
+        import soundfile as sf
+        sf.write(audio_path, waveform, audio["sample_rate"])
+
+        # Save metadata to JSON
+        metadata = {
+            "audio_path": audio_path,
+            "caption": caption,
+            "lyrics": lyrics,
+            "bpm": bpm,
+            "keyscale": keyscale,
+            "language": language,
+            "is_instrumental": (lyrics == "[Instrumental]"),
+        }
+
+        metadata_filename = f"sample_{timestamp}.json"
+        metadata_path = os.path.join(output_dir, metadata_filename)
+
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+        return f"Saved: {audio_filename}"
+
+
+class ACE_STEP_COLLECT_TRAINING_SAMPLES:
+    """Collect training samples from a directory
+
+    This helper node reads all training samples (audio + metadata JSON files)
+    from a directory and formats them for the Prepare Training Data node.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "samples_dir": ("STRING", {"default": "./training_samples", "tooltip": "Directory containing training samples (.wav and .json files)."}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("audio_files", "captions", "lyrics_list", "bpm_list", "keyscale_list", "language_list")
+    FUNCTION = "collect_samples"
+    CATEGORY = "Audio/ACE-Step/Training"
+
+    def collect_samples(
+        self,
+        samples_dir: str,
+    ) -> Tuple[str, str, str, str, str, str]:
+        """Collect training samples from directory."""
+
+        import os
+        import json
+
+        if not os.path.exists(samples_dir):
+            return "", "", "", "", "", f"❌ Directory not found: {samples_dir}"
+
+        audio_files = []
+        captions = []
+        lyrics_list = []
+        bpm_list = []
+        keyscale_list = []
+        language_list = []
+
+        # Find all JSON metadata files
+        json_files = [f for f in os.listdir(samples_dir) if f.endswith('.json')]
+
+        for json_file in json_files:
+            json_path = os.path.join(samples_dir, json_file)
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+
+                audio_path = metadata.get("audio_path", "")
+                if os.path.exists(audio_path):
+                    audio_files.append(audio_path)
+                    captions.append(metadata.get("caption", ""))
+                    lyrics_list.append(metadata.get("lyrics", "[Instrumental]"))
+                    bpm_list.append(str(metadata.get("bpm", 0)))
+                    keyscale_list.append(metadata.get("keyscale", ""))
+                    language_list.append(metadata.get("language", "instrumental"))
+
+            except Exception as e:
+                print(f"[ACE_STEP_COLLECT_TRAINING_SAMPLES] Error reading {json_file}: {e}")
+
+        if not audio_files:
+            return "", "", "", "", "", "❌ No valid training samples found in directory"
+
+        # Join with commas
+        audio_files_str = ",".join(audio_files)
+        captions_str = ",".join(captions)
+        lyrics_str = ",".join(lyrics_list)
+        bpm_str = ",".join(bpm_list)
+        keyscale_str = ",".join(keyscale_list)
+        language_str = ",".join(language_list)
+
+        return audio_files_str, captions_str, lyrics_str, bpm_str, keyscale_str, language_str
+
+
 # Node mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
     "ACE_STEP_TextToMusic": ACE_STEP_TEXT_TO_MUSIC,
@@ -1560,6 +2053,11 @@ NODE_CLASS_MAPPINGS = {
     "ACE_STEP_CreateSample": ACE_STEP_CREATE_SAMPLE,
     "ACE_STEP_Understand": ACE_STEP_UNDERSTAND,
     "ACE_STEP_LoRALoader": ACE_STEP_LORA_LOADER,
+    # Training nodes
+    "ACE_STEP_LoRAPrepareTrainingData": ACE_STEP_LORA_PREPARE_TRAINING_DATA,
+    "ACE_STEP_LoRATrain": ACE_STEP_LORA_TRAIN,
+    "ACE_STEP_CreateTrainingSample": ACE_STEP_CREATE_TRAINING_SAMPLE,
+    "ACE_STEP_CollectTrainingSamples": ACE_STEP_COLLECT_TRAINING_SAMPLES,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1571,4 +2069,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_CreateSample": "ACE-Step Create Sample",
     "ACE_STEP_Understand": "ACE-Step Understand",
     "ACE_STEP_LoRALoader": "ACE-Step LoRA Loader",
+    # Training nodes
+    "ACE_STEP_LoRAPrepareTrainingData": "ACE-Step LoRA Prepare Training Data",
+    "ACE_STEP_LoRATrain": "ACE-Step LoRA Train",
+    "ACE_STEP_CreateTrainingSample": "ACE-Step Create Training Sample",
+    "ACE_STEP_CollectTrainingSamples": "ACE-Step Collect Training Samples",
 }
