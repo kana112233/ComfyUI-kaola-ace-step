@@ -1813,7 +1813,31 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
             def training_step(self, batch):
                 # FORCE ENABLE GRADIENTS
                 torch.set_grad_enabled(True)
-                return super().training_step(batch)
+                
+                # Debug Info
+                if not getattr(self, '_debug_logged', False):
+                    print(f"[ACE_STEP DEBUG] training_step start")
+                    print(f"  Grad Enabled: {torch.is_grad_enabled()}")
+                    print(f"  Model Training Mode: {self.model.training}")
+                    print(f"  Decoder Training Mode: {self.model.decoder.training}")
+                    
+                    # Check first parameter
+                    for name, param in self.model.named_parameters():
+                        if param.requires_grad:
+                            print(f"  Param {name} requires_grad: {param.requires_grad}")
+                            break
+                    else:
+                        print("  ❌ NO PARAMETERS REQUIRE GRAD!")
+                        
+                    self._debug_logged = True
+                    
+                loss = super().training_step(batch)
+                
+                if not getattr(self, '_loss_debug_logged', False):
+                     print(f"  Loss Grad Fn: {loss.grad_fn}")
+                     self._loss_debug_logged = True
+                     
+                return loss
 
         class SafeLoRATrainer(trainer_mod.LoRATrainer):
             """Subclass that uses SafePreprocessedLoRAModule."""
