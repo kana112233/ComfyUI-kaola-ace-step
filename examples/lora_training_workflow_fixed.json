@@ -1,0 +1,259 @@
+{
+  "last_node_id": 15,
+  "last_link_id": 20,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "Load Audio",
+      "pos": [50, 50],
+      "size": [320, 100],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "outputs": [{"name": "AUDIO", "type": "AUDIO", "links": [1], "shape": 3}],
+      "properties": {},
+      "widgets_values": ["path/to/audio1.wav"]
+    },
+    {
+      "id": 2,
+      "type": "ACE-Step Create Training Sample",
+      "pos": [50, 200],
+      "size": [320, 450],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {"name": "audio", "type": "AUDIO", "link": 1}
+      ],
+      "outputs": [{"name": "sample_info", "type": "STRING", "links": null, "shape": 3}],
+      "properties": {},
+      "widgets_values": [
+        "Electronic pop with synth",
+        "./training_samples",
+        "[Instrumental]",
+        120,
+        "C Major",
+        "instrumental"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "ACE-Step Collect Training Samples",
+      "pos": [450, 200],
+      "size": [400, 100],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "outputs": [
+        {"name": "audio_files", "type": "STRING", "links": [2], "shape": 3},
+        {"name": "captions", "type": "STRING", "links": [3], "shape": 3},
+        {"name": "lyrics_list", "type": "STRING", "links": [4], "shape": 3},
+        {"name": "bpm_list", "type": "STRING", "links": [5], "shape": 3},
+        {"name": "keyscale_list", "type": "STRING", "links": [6], "shape": 3},
+        {"name": "language_list", "type": "STRING", "links": [7], "shape": 3}
+      ],
+      "properties": {},
+      "widgets_values": ["./training_samples"]
+    },
+    {
+      "id": 4,
+      "type": "ACE-Step LoRA Prepare Training Data",
+      "pos": [900, 50],
+      "size": [400, 700],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {"name": "audio_files", "type": "STRING", "link": 2},
+        {"name": "captions", "type": "STRING", "link": 3},
+        {"name": "lyrics_list", "type": "STRING", "link": 4},
+        {"name": "bpm_list", "type": "STRING", "link": 5},
+        {"name": "keyscale_list", "type": "STRING", "link": 6},
+        {"name": "language_list", "type": "STRING", "link": 7}
+      ],
+      "outputs": [
+        {"name": "tensor_dir", "type": "STRING", "links": [8], "shape": 3},
+        {"name": "status", "type": "STRING", "links": [9], "shape": 3}
+      ],
+      "properties": {},
+      "widgets_values": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "./datasets/preprocessed_tensors",
+        "Ace-Step1.5",
+        "acestep-v15-turbo",
+        "auto",
+        null,
+        null,
+        null,
+        null,
+        "",
+        "append",
+        240
+      ]
+    },
+    {
+      "id": 5,
+      "type": "Show Text",
+      "pos": [900, 780],
+      "size": [400, 200],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {"name": "text", "type": "STRING", "link": 9}
+      ],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": ["", "Prepare Status"]
+    },
+    {
+      "id": 6,
+      "type": "ACE-Step LoRA Train",
+      "pos": [1350, 50],
+      "size": [400, 900],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {"name": "tensor_dir", "type": "STRING", "link": 8}
+      ],
+      "outputs": [
+        {"name": "lora_info", "type": "ACE_STEP_LORA_INFO", "links": [10], "shape": 3},
+        {"name": "training_log", "type": "STRING", "links": [11], "shape": 3}
+      ],
+      "properties": {},
+      "widgets_values": [
+        "",
+        "Ace-Step1.5",
+        "acestep-v15-turbo",
+        "./lora_output",
+        64,
+        128,
+        0.1,
+        0.0003,
+        1000,
+        1,
+        1,
+        200,
+        42,
+        "auto",
+        "",
+        "q_proj,k_proj,v_proj,o_proj"
+      ]
+    },
+    {
+      "id": 7,
+      "type": "Show Text",
+      "pos": [1350, 980],
+      "size": [400, 200],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {"name": "text", "type": "STRING", "link": 11}
+      ],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": ["", "Training Log"]
+    },
+    {
+      "id": 8,
+      "type": "ACE-Step Text to Music",
+      "pos": [1800, 50],
+      "size": [400, 800],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {"name": "lora_info", "type": "ACE_STEP_LORA_INFO", "link": 10}
+      ],
+      "outputs": [
+        {"name": "audio", "type": "AUDIO", "links": [12], "shape": 3},
+        {"name": "audio_path", "type": "STRING", "links": null, "shape": 3},
+        {"name": "metadata", "type": "STRING", "links": null, "shape": 3}
+      ],
+      "properties": {},
+      "widgets_values": [
+        "Generate music with trained style",
+        "Ace-Step1.5",
+        "acestep-v15-turbo",
+        "acestep-5Hz-lm-1.7B",
+        30,
+        2,
+        -1,
+        8,
+        "auto",
+        null,
+        "",
+        0,
+        "",
+        "",
+        "unknown",
+        false,
+        7,
+        1,
+        true,
+        0,
+        "None",
+        false,
+        "flac"
+      ]
+    },
+    {
+      "id": 9,
+      "type": "Preview Audio",
+      "pos": [2250, 50],
+      "size": [400, 300],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {"name": "audio", "type": "AUDIO", "link": 12}
+      ],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [[]]
+    },
+    {
+      "id": 10,
+      "type": "Note",
+      "pos": [50, 700],
+      "size": [350, 200],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "outputs": [],
+      "properties": {
+        "text": "## LoRA Training Workflow\n\n### 使用流程:\n1. 加载音频 → 创建训练样本\n2. 收集样本 → 预处理数据\n3. 训练 LoRA\n4. 测试生成\n\n### 建议:\n- 10-20个样本开始\n- rank=64, alpha=128\n- 训练1000轮"
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 0, 2, 0, "AUDIO"],
+    [2, 3, 0, 4, 0, "STRING"],
+    [3, 3, 1, 4, 1, "STRING"],
+    [4, 3, 2, 4, 2, "STRING"],
+    [5, 3, 3, 4, 3, "STRING"],
+    [6, 3, 4, 4, 4, "STRING"],
+    [7, 3, 5, 4, 5, "STRING"],
+    [8, 4, 0, 6, 0, "STRING"],
+    [9, 4, 1, 5, 0, "STRING"],
+    [10, 6, 0, 8, 9, "ACE_STEP_LORA_INFO"],
+    [11, 6, 1, 7, 0, "STRING"],
+    [12, 8, 0, 9, 0, "AUDIO"]
+  ],
+  "groups": [
+    {"title": "Step1: Create Samples", "bounding": [30, 10, 850, 900], "color": "#3f789e", "font_size": 24},
+    {"title": "Step2: Prepare Data", "bounding": [870, 10, 480, 1000], "color": "#8f8f2a", "font_size": 24},
+    {"title": "Step3: Train", "bounding": [1320, 10, 450, 1200], "color": "#2a8f3f", "font_size": 24},
+    {"title": "Step4: Test", "bounding": [1770, 10, 900, 850], "color": "#5a3f8f", "font_size": 24}
+  ],
+  "config": {},
+  "extra": {},
+  "version": 0.4
+}
