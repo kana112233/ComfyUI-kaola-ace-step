@@ -188,11 +188,7 @@ if ACESTEP_AVAILABLE:
             os.makedirs(self.training_config.output_dir, exist_ok=True)
 
             # Create dataset and dataloader
-            dataset = PreprocessedTensorDataset(
-                tensor_dir,
-                self.training_config.shift,
-                self.training_config.num_inference_steps,
-            )
+            dataset = PreprocessedTensorDataset(tensor_dir)
             train_loader = DataLoader(
                 dataset,
                 batch_size=self.training_config.batch_size,
