@@ -190,7 +190,25 @@ class SafeLoRATrainer(trainer_mod.LoRATrainer):
                 yield 0, 0.0, "❌ No valid samples found in tensor directory"
                 return
             
-            yield 0, 0.0, f"📂 Loaded {len(data_module.train_dataset)} preprocessed samples"
+            dataset_size = len(data_module.train_dataset)
+            yield 0, 0.0, f"📂 Loaded {dataset_size} preprocessed samples"
+            
+            # Calculate total steps for Progress Bar
+            # steps = (dataset_size // batch_size) * epochs + (epochs if remainder) ... strictly:
+            # steps_per_epoch = len(train_loader) 
+            # But we don't have loader yet. data_module.train_dataloader() creates it.
+            # Lightning/Fabric handles this, but we can estimate.
+            
+            batch_size = self.training_config.batch_size
+            grad_accum = self.training_config.gradient_accumulation_steps
+            max_epochs = self.training_config.max_epochs
+            
+            # steps_per_epoch = math.ceil(dataset_size / batch_size)
+            import math
+            steps_per_epoch = math.ceil(dataset_size / batch_size)
+            total_steps = (steps_per_epoch * max_epochs) // grad_accum
+            
+            yield 0, 0.0, f"TOTAL_STEPS: {total_steps}"
 
             # Disconnnect from ComfyUI's VRAM management temporarily implies we handle it? 
             # No, just run the loop.

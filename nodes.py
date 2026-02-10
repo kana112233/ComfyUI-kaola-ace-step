@@ -78,6 +78,7 @@ try:
         """Wrapper for ComfyUI ProgressBar that matches AceStep's progress callback signature"""
         def __init__(self, total_steps=100):
             self.pbar = None
+            self.total_steps = total_steps
             try:
                 self.pbar = comfy.utils.ProgressBar(total_steps)
             except:
@@ -85,8 +86,13 @@ try:
 
         def __call__(self, percentage, desc=""):
             if self.pbar:
-                # ComfyUI update takes (current, total, desc)
-                self.pbar.update(int(percentage * 100), 100, desc)
+                # ComfyUI ProgressBar.update_absolute takes (value, total, preview)
+                # Calculate absolute value from percentage
+                value = int(percentage * self.total_steps)
+                self.pbar.update_absolute(value, self.total_steps)
+                # Print description separately since ComfyUI doesn't support it in the API
+                if desc:
+                    print(f"[ACE-Step] {desc}")
             else:
                 print(f"[ACE-Step Progress] {int(percentage * 100)}%: {desc}")
     
@@ -1766,7 +1772,7 @@ class ACE_STEP_LORA_PREPARE_TRAINING_DATA(ACE_STEP_BASE):
                  # Map to overall 100% (or just use current/total if pbar supports it)
                  pbar(curr / total, msg)
              else:
-                 pbar.pbar.update(0, num_audios, msg) if pbar.pbar else print(msg)
+                 pbar.pbar.update_absolute(0, num_audios) if pbar.pbar else print(msg)
 
         # Preprocess to tensors
         output_paths, status = builder.preprocess_to_tensors(
