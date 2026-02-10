@@ -1990,6 +1990,20 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
         # Training fixes are now handled internally by SafeLoRATrainer/SafePreprocessedLoRAModule
         # using the patched_training_step function. 
         # No external patching required here.
+        
+        # Sanitize model for training (CRITICAL FIX for ComfyUI inference tensors)
+        # This replaces inference-tainted modules (Linear, LayerNorm, etc.) with fresh PyTorch modules
+        # to ensure gradients can be computed.
+        try:
+            from .acestep_sanitizer import sanitize_model_for_training
+            print("[ACE_STEP] Sanitizing model for training...")
+            dit_handler = sanitize_model_for_training(dit_handler)
+        except ImportError:
+            print("[ACE_STEP] ⚠️ Could not import acestep_sanitizer. Training might fail with grad errors.")
+        except Exception as e:
+            print(f"[ACE_STEP] ⚠️ Model sanitization failed: {e}")
+            import traceback
+            traceback.print_exc()
 
         # Create trainer (Using our SAFE subclass)
         # from acestep.training.trainer import LoRATrainer  <-- REPLACED
