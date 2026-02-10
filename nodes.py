@@ -1977,7 +1977,7 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
     # CRITICAL: ComfyUI runs nodes in inference_mode by default.
     # We must explicitly disable it to allow gradient computation.
     @torch.inference_mode(False)
-    def train_lora(self, tensor_dir, checkpoint_dir, config_path, 
+    def train_lora(self, tensor_dir, checkpoint_dir, config_path, output_dir, 
                   target_modules="to_q,to_k,to_v,to_out.0", 
                   lora_rank=32, lora_alpha=32, lora_dropout=0.0,
                   learning_rate=0.0001, batch_size=1, gradient_accumulation=4,
