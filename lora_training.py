@@ -146,25 +146,6 @@ class SafePreprocessedLoRAModule(trainer_mod.PreprocessedLoRAModule):
         if hasattr(self.model, 'decoder'):
             self.model.decoder.train()
         
-        # Debug Info
-        if not getattr(self, '_debug_logged', False):
-            print(f"[ACE_STEP DEBUG] training_step start")
-            print(f"  Grad Enabled: {torch.is_grad_enabled()}")
-            print(f"  Model Training Mode: {self.model.training}")
-            if hasattr(self.model, 'decoder'):
-                print(f"  Decoder Training Mode: {self.model.decoder.training}")
-            
-            # Check first parameter
-            for name, param in self.model.named_parameters():
-                if param.requires_grad:
-                    print(f"  Param {name} requires_grad: {param.requires_grad}")
-                    break
-            else:
-                print("  ❌ NO PARAMETERS REQUIRE GRAD!")
-                
-            self._debug_logged = True
-            
-        
         # Forward using robustness patch (this fixes dtype and no_grad issues)
         loss = patched_training_step(self, batch)
         
@@ -188,44 +169,6 @@ class SafeLoRATrainer(trainer_mod.LoRATrainer):
                 device=self.dit_handler.device,
                 dtype=self.dit_handler.dtype,
             )
-            
-            # DEBUG: Component deep inspection and Hook registration
-            import sys
-            print(f"[ACE_STEP] Deep inspecting model structure...")
-            try:
-                mdl = self.dit_handler.model
-                if hasattr(mdl, 'decoder'):
-                    decoder = mdl.decoder
-                    print(f"[ACE_STEP] Decoder type: {type(decoder)}")
-                    
-                    # Check first Linear layer and its base
-                    for name, m in decoder.named_modules():
-                        if "Linear" in type(m).__name__:
-                            print(f"[ACE_STEP] Found Linear layer '{name}': {type(m)}")
-                            if hasattr(m, 'base_layer'):
-                                print(f"[ACE_STEP]   Base layer: {type(m.base_layer)}")
-                                print(f"[ACE_STEP]   Base layer weight requires_grad: {m.base_layer.weight.requires_grad}")
-                            break
-                    
-                    # Register Hook to debug Gradient Flow
-                    def log_grad_flow(module, input, output):
-                        # print(f"[ACE_STEP DEBUG HOOK] {module.__class__.__name__} Output grad_fn: {output[0].grad_fn if isinstance(output, tuple) else output.grad_fn}")
-                        # sys.stdout.flush()
-                        pass
-                        
-                    # Register on top decoder
-                    decoder.register_forward_hook(log_grad_flow)
-                    
-                    # Register on first layer
-                    if hasattr(decoder, 'base_model') and hasattr(decoder.base_model, 'model') and hasattr(decoder.base_model.model, 'layers'):
-                        first_layer = decoder.base_model.model.layers[0]
-                        first_layer.register_forward_hook(log_grad_flow)
-                        print(f"[ACE_STEP] Hooks registered on Decoder and Layer 0")
-
-                sys.stdout.flush()
-            except Exception as e:
-                print(f"[ACE_STEP] Error inspecting model: {e}")
-                sys.stdout.flush()
             
             # Everything else is the same as original, but we can't easily call super() 
             # because it hardcodes the class instantiation.
