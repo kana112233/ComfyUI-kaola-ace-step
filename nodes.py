@@ -1889,22 +1889,50 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
                         dtype=self.dit_handler.dtype,
                     )
                     
-                    # DEBUG: Verify model structure
+                    # Create SAFE training module
+                    self.module = SafePreprocessedLoRAModule(
+                        model=self.dit_handler.model,
+                        lora_config=self.lora_config,
+                        training_config=self.training_config,
+                        device=self.dit_handler.device,
+                        dtype=self.dit_handler.dtype,
+                    )
+                    
+                    # DEBUG: Component deep inspection and Hook registration
                     import sys
-                    print(f"[ACE_STEP] Verifying model structure inside trainer...")
+                    print(f"[ACE_STEP] Deep inspecting model structure...")
                     try:
                         mdl = self.dit_handler.model
                         if hasattr(mdl, 'decoder'):
                             decoder = mdl.decoder
                             print(f"[ACE_STEP] Decoder type: {type(decoder)}")
-                            # Check first module
+                            
+                            # Check first Linear layer and its base
                             for name, m in decoder.named_modules():
                                 if "Linear" in type(m).__name__:
                                     print(f"[ACE_STEP] Found Linear layer '{name}': {type(m)}")
+                                    if hasattr(m, 'base_layer'):
+                                        print(f"[ACE_STEP]   Base layer: {type(m.base_layer)}")
+                                        print(f"[ACE_STEP]   Base layer weight requires_grad: {m.base_layer.weight.requires_grad}")
                                     break
+                            
+                            # Register Hook to debug Gradient Flow
+                            def log_grad_flow(module, input, output):
+                                print(f"[ACE_STEP DEBUG HOOK] {module.__class__.__name__} Output grad_fn: {output[0].grad_fn if isinstance(output, tuple) else output.grad_fn}")
+                                sys.stdout.flush()
+                                
+                            # Register on top decoder
+                            decoder.register_forward_hook(log_grad_flow)
+                            
+                            # Register on first layer
+                            if hasattr(decoder, 'base_model') and hasattr(decoder.base_model, 'model') and hasattr(decoder.base_model.model, 'layers'):
+                                first_layer = decoder.base_model.model.layers[0]
+                                first_layer.register_forward_hook(log_grad_flow)
+                                print(f"[ACE_STEP] Hooks registered on Decoder and Layer 0")
+
                         sys.stdout.flush()
                     except Exception as e:
-                        print(f"[ACE_STEP] Error verifying model: {e}")
+                        print(f"[ACE_STEP] Error inspecting model: {e}")
                         sys.stdout.flush()
                     
                     # Everything else is the same as original, but we can't easily call super() 
