@@ -1617,13 +1617,12 @@ class ACE_STEP_LORA_PREPARE_TRAINING_DATA(ACE_STEP_BASE):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "audio_files": ("STRING", {"default": "", "multiline": True, "tooltip": "Comma-separated list of audio file paths OR use audio input connections"}),
-                "captions": ("STRING", {"default": "", "multiline": True, "tooltip": "Comma-separated list of captions/descriptions for each audio file. Use one caption per audio file."}),
-                "lyrics_list": ("STRING", {"default": "[Instrumental]", "multiline": True, "tooltip": "Comma-separated list of lyrics for each audio file. Use '[Instrumental]' for instrumental tracks."}),
-                "bpm_list": ("STRING", {"default": "0", "tooltip": "Comma-separated list of BPM values. Use '0' or leave empty for auto-detection."}),
-                "keyscale_list": ("STRING", {"default": "", "tooltip": "Comma-separated list of musical keys (e.g., 'C Major', 'Am')."}),
-                "language_list": ("STRING", {"default": "instrumental", "tooltip": "Comma-separated list of languages (e.g., 'en', 'zh', 'instrumental')."}),
+                "audio_dir": ("STRING", {"default": "./my_audio_files", "tooltip": "Directory containing audio files. All supported formats will be auto-scanned. OR leave empty and use audio_files/inputs below."}),
+                "audio_files": ("STRING", {"default": "", "multiline": True, "tooltip": "Comma-separated list of audio file paths (use if audio_dir is empty)"}),
+                "captions": ("STRING", {"default": "", "multiline": True, "tooltip": "Comma-separated list of captions/descriptions for each audio file. If empty, auto-generates from filename or uses a default caption."}),
+                "lyrics_list": ("STRING", {"default": "[Instrumental]", "multiline": True, "tooltip": "Comma-separated list of lyrics for each audio file. Use '[Instrumental]' for instrumental tracks. Applies to ALL files if only one value."}),
                 "output_dir": ("STRING", {"default": "./datasets/preprocessed_tensors", "tooltip": "Directory to save preprocessed tensor files."}),
+                "clear_output_dir": ("BOOLEAN", {"default": True, "tooltip": "Clear output directory before preprocessing. Recommended to avoid mixing old and new samples."}),
                 "checkpoint_dir": (get_acestep_checkpoints(), {"default": get_acestep_checkpoints()[0], "tooltip": "Directory containing ACE-Step model weights."}),
                 "config_path": (get_acestep_models(), {"default": "acestep-v15-turbo", "tooltip": "Model configuration to use."}),
                 "device": (["auto", "cuda", "cpu", "mps", "xpu"], {"default": "auto", "tooltip": "Computing platform."}),
@@ -1636,6 +1635,7 @@ class ACE_STEP_LORA_PREPARE_TRAINING_DATA(ACE_STEP_BASE):
                 "custom_tag": ("STRING", {"default": "", "tooltip": "Custom tag to prepend/append to all captions (e.g., '8bit_retro')."}),
                 "tag_position": (["append", "prepend", "replace"], {"default": "append", "tooltip": "Where to place the custom tag in the caption."}),
                 "max_duration": ("FLOAT", {"default": 240.0, "min": 10.0, "max": 600.0, "tooltip": "Maximum audio duration in seconds. Longer audio will be truncated."}),
+                "default_caption": ("STRING", {"default": "Music track", "tooltip": "Default caption used when captions list is empty or insufficient."}),
             },
         }
 
@@ -1647,13 +1647,12 @@ class ACE_STEP_LORA_PREPARE_TRAINING_DATA(ACE_STEP_BASE):
 
     def prepare_training_data(
         self,
+        audio_dir: str,
         audio_files: str,
         captions: str,
         lyrics_list: str,
-        bpm_list: str,
-        keyscale_list: str,
-        language_list: str,
         output_dir: str,
+        clear_output_dir: bool,
         checkpoint_dir: str,
         config_path: str,
         device: str,
@@ -1664,16 +1663,42 @@ class ACE_STEP_LORA_PREPARE_TRAINING_DATA(ACE_STEP_BASE):
         custom_tag: str = "",
         tag_position: str = "append",
         max_duration: float = 240.0,
+        default_caption: str = "Music track",
     ) -> Tuple[str, str]:
         """Prepare training data by preprocessing audio files to tensor files."""
 
         import os
+        import glob
+        import shutil
 
-        # Collect audio files from both string paths and audio inputs
+        # Create and optionally clear output directory
+        os.makedirs(output_dir, exist_ok=True)
+        if clear_output_dir:
+            # Clear old .pt files to avoid mixing with new samples
+            for filename in os.listdir(output_dir):
+                if filename.endswith(".pt"):
+                    file_path = os.path.join(output_dir, filename)
+                    try:
+                        os.remove(file_path)
+                        print(f"[ACE-Step] Removed old tensor: {filename}")
+                    except Exception as e:
+                        print(f"[ACE-Step] Warning: Could not remove {filename}: {e}")
+
+        # Collect audio files from multiple sources
         audio_file_paths = []
         audio_data_list = []
 
-        # From string input (file paths)
+        # 1. Scan audio directory (if provided and exists)
+        if audio_dir and os.path.isdir(audio_dir):
+            supported_formats = ["*.wav", "*.mp3", "*.flac", "*.ogg", "*.opus", "*.m4a"]
+            for fmt in supported_formats:
+                pattern = os.path.join(audio_dir, "**", fmt)
+                found = glob.glob(pattern, recursive=True)
+                audio_file_paths.extend(found)
+            audio_file_paths.sort()  # Consistent order
+            print(f"[ACE-Step] Scanned {len(audio_file_paths)} audio files from {audio_dir}")
+
+        # 2. From string input (file paths)
         if audio_files:
             for path in audio_files.split(","):
                 path = path.strip()
@@ -1696,7 +1721,7 @@ class ACE_STEP_LORA_PREPARE_TRAINING_DATA(ACE_STEP_BASE):
                 audio_file_paths.append(temp_path)
 
         if not audio_file_paths:
-            return "", "❌ No audio files provided. Please provide audio file paths OR connect audio inputs."
+            return "", "❌ No audio files provided. Please provide audio_dir (folder path) OR audio_files (file paths)."
 
         # Initialize handlers
         dit_handler, llm_handler = self.initialize_handlers(
@@ -1709,16 +1734,24 @@ class ACE_STEP_LORA_PREPARE_TRAINING_DATA(ACE_STEP_BASE):
         # Parse input lists
         caption_list = [c.strip() for c in captions.split(",") if c.strip()] if captions else []
         lyrics_items = [l.strip() for l in lyrics_list.split(",") if l.strip()] if lyrics_list else []
-        bpm_items = [b.strip() for b in bpm_list.split(",") if b.strip()] if bpm_list else []
-        keyscale_items = [k.strip() for k in keyscale_list.split(",") if k.strip()] if keyscale_list else []
-        language_items = [lang.strip() for lang in language_list.split(",") if lang.strip()] if language_list else []
 
         # Ensure we have captions for all audio files
         num_audios = len(audio_file_paths)
         if not caption_list:
-            caption_list = [""] * num_audios
+            # Use default_caption or generate from filenames
+            caption_list = []
+            for path in audio_file_paths:
+                filename = os.path.splitext(os.path.basename(path))[0]
+                caption_list.append(f"{default_caption}: {filename}")
         if len(caption_list) < num_audios:
-            caption_list.extend([""] * (num_audios - len(caption_list)))
+            # Fill remaining with default_caption
+            caption_list.extend([f"{default_caption} (track {i+1})" for i in range(len(caption_list), num_audios)])
+
+        # Ensure lyrics list covers all files (use first value for all if only one provided)
+        if len(lyrics_items) == 1:
+            lyrics_items = lyrics_items * num_audios
+        elif len(lyrics_items) < num_audios:
+            lyrics_items.extend(["[Instrumental]"] * (num_audios - len(lyrics_items)))
 
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
@@ -1738,11 +1771,12 @@ class ACE_STEP_LORA_PREPARE_TRAINING_DATA(ACE_STEP_BASE):
         # Convert to AudioSample objects
         samples = []
         for i, audio_path in enumerate(audio_file_paths):
-            caption = caption_list[i] if i < len(caption_list) else ""
+            caption = caption_list[i] if i < len(caption_list) else f"{default_caption} (track {i+1})"
             lyrics = lyrics_items[i] if i < len(lyrics_items) else "[Instrumental]"
-            bpm = int(bpm_items[i]) if i < len(bpm_items) and bpm_items[i].isdigit() else None
-            keyscale = keyscale_items[i] if i < len(keyscale_items) else ""
-            language = language_items[i] if i < len(language_items) else "instrumental"
+            # Auto-detect BPM (None means auto-detect by upstream)
+            bpm = None
+            keyscale = ""  # Empty means auto-detect
+            language = "instrumental"  # Default to instrumental
 
             sample = AudioSample(
                 audio_path=audio_path,
