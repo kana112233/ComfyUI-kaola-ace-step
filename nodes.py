@@ -1889,6 +1889,24 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
                         dtype=self.dit_handler.dtype,
                     )
                     
+                    # DEBUG: Verify model structure
+                    import sys
+                    print(f"[ACE_STEP] Verifying model structure inside trainer...")
+                    try:
+                        mdl = self.dit_handler.model
+                        if hasattr(mdl, 'decoder'):
+                            decoder = mdl.decoder
+                            print(f"[ACE_STEP] Decoder type: {type(decoder)}")
+                            # Check first module
+                            for name, m in decoder.named_modules():
+                                if "Linear" in type(m).__name__:
+                                    print(f"[ACE_STEP] Found Linear layer '{name}': {type(m)}")
+                                    break
+                        sys.stdout.flush()
+                    except Exception as e:
+                        print(f"[ACE_STEP] Error verifying model: {e}")
+                        sys.stdout.flush()
+                    
                     # Everything else is the same as original, but we can't easily call super() 
                     # because it hardcodes the class instantiation.
                     # So we delegate to the _train methods which use self.module
@@ -1995,14 +2013,17 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
         # This replaces inference-tainted modules (Linear, LayerNorm, etc.) with fresh PyTorch modules
         # to ensure gradients can be computed.
         try:
+            import sys
             from .acestep_sanitizer import sanitize_model_for_training
             print(f"[ACE_STEP] Sanitizing model for training...")
             print(f"[ACE_STEP] dit_handler type: {type(dit_handler)}")
             print(f"[ACE_STEP] Has .model attribute: {hasattr(dit_handler, 'model')}")
+            sys.stdout.flush()
             
             # The sanitizer needs the actual torch.nn.Module, not the AceStepHandler wrapper
             model_to_sanitize = dit_handler.model if hasattr(dit_handler, 'model') else dit_handler
             print(f"[ACE_STEP] Model to sanitize type: {type(model_to_sanitize)}")
+            sys.stdout.flush()
             
             # Perform sanitization
             sanitized_model = sanitize_model_for_training(model_to_sanitize)
@@ -2018,15 +2039,19 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
             if decoder_check:
                 params_with_grad = sum(1 for p in decoder_check.parameters() if p.requires_grad)
                 print(f"[ACE_STEP] Sanitization complete. Decoder params with grad (should be 0 before LoRA): {params_with_grad}")
+                sys.stdout.flush()
             else:
                 print(f"[ACE_STEP] ⚠️ WARNING: Could not find decoder to verify sanitization!")
+                sys.stdout.flush()
                 
         except ImportError:
             print("[ACE_STEP] ⚠️ Could not import acestep_sanitizer. Training might fail with grad errors.")
+            sys.stdout.flush()
         except Exception as e:
             print(f"[ACE_STEP] ⚠️ Model sanitization failed: {e}")
             import traceback
             traceback.print_exc()
+            sys.stdout.flush()
 
         # Create trainer (Using our SAFE subclass)
         # from acestep.training.trainer import LoRATrainer  <-- REPLACED
