@@ -1978,10 +1978,11 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
     # We must explicitly disable it to allow gradient computation.
     @torch.inference_mode(False)
     def train_lora(self, tensor_dir, checkpoint_dir, config_path, output_dir, 
-                  target_modules="to_q,to_k,to_v,to_out.0", 
                   lora_rank=32, lora_alpha=32, lora_dropout=0.0,
-                  learning_rate=0.0001, batch_size=1, gradient_accumulation=4,
-                  train_epochs=10, save_every_n_epochs=2, seed=42):
+                  learning_rate=0.0001, train_epochs=10, 
+                  batch_size=1, gradient_accumulation=4, 
+                  save_every_n_epochs=2, seed=42, device="auto",
+                  resume_from="", target_modules="q_proj,k_proj,v_proj,o_proj"):
         
         # Ensure we are not in inference mode and gradients are enabled
         torch.set_grad_enabled(True)
