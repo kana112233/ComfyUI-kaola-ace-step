@@ -65,7 +65,33 @@ try:
     # Access generate_music through module to ensure monkey patch works
     generate_music = acestep_inference.generate_music
     ACESTEP_AVAILABLE = True
+
+    # --------------------------------------------------------------------------------
+    # ComfyUI Progress Bar Wrapper
+    # --------------------------------------------------------------------------------
+    try:
+        import comfy.utils
+    except ImportError:
+        comfy = None
+
+    class ComfyProgress:
+        """Wrapper for ComfyUI ProgressBar that matches AceStep's progress callback signature"""
+        def __init__(self, total_steps=100):
+            self.pbar = None
+            try:
+                self.pbar = comfy.utils.ProgressBar(total_steps)
+            except:
+                pass
+
+        def __call__(self, percentage, desc=""):
+            if self.pbar:
+                # ComfyUI update takes (current, total, desc)
+                self.pbar.update(int(percentage * 100), 100, desc)
+            else:
+                print(f"[ACE-Step Progress] {int(percentage * 100)}%: {desc}")
     
+    # --------------------------------------------------------------------------------
+        
     # Helper to instantiate GenerationParams safely if upstream version changes
     def create_generation_params(**kwargs):
         # Filter kwargs to only include those accepted by the upstream GenerationParams dataclass
@@ -898,9 +924,13 @@ class ACE_STEP_COVER(ACE_STEP_BASE):
                 audio_format=audio_format,
             )
 
+            # Initialize progress bar
+            progress = ComfyProgress()
+            progress(0.1, "Initializing Cover Generation...")
+
             # Generate music
             output_dir = folder_paths.get_output_directory()
-            result = generate_music(dit_handler, llm_handler, params, config, save_dir=output_dir)
+            result = generate_music(dit_handler, llm_handler, params, config, save_dir=output_dir, progress=progress)
 
             if not result.success:
                 raise RuntimeError(f"Generation failed: {result.error}")
@@ -1723,11 +1753,27 @@ class ACE_STEP_LORA_PREPARE_TRAINING_DATA(ACE_STEP_BASE):
 
         builder.samples = samples
 
+        # Initialize progress bar
+        pbar = ComfyProgress(total_steps=num_audios)
+        def progress_callback(msg):
+             # Extract index if possible from message like "Preprocessing 1/5: ..."
+             # Or just use a simple counter
+             import re
+             match = re.search(r"Preprocessing (\d+)/(\d+)", msg)
+             if match:
+                 curr = int(match.group(1))
+                 total = int(match.group(2))
+                 # Map to overall 100% (or just use current/total if pbar supports it)
+                 pbar(curr / total, msg)
+             else:
+                 pbar.pbar.update(0, num_audios, msg) if pbar.pbar else print(msg)
+
         # Preprocess to tensors
         output_paths, status = builder.preprocess_to_tensors(
             dit_handler=dit_handler,
             output_dir=output_dir,
             max_duration=max_duration,
+            progress_callback=progress_callback,
         )
 
         # Clean up temp files (only those we created)
@@ -1919,15 +1965,32 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
         # Run training
         log_messages = []
         training_state = {}
+        pbar = None
 
         try:
+            import comfy.utils
+            
             for step, loss, status in trainer.train_from_preprocessed(
                 tensor_dir=tensor_dir,
                 training_state=training_state,
                 resume_from=resume_from if resume_from else None,
             ):
+                # Handle Progress Bar Initialization
+                if status.startswith("TOTAL_STEPS:"):
+                    try:
+                        total_steps = int(status.split(":")[1].strip())
+                        pbar = comfy.utils.ProgressBar(total_steps)
+                        print(f"[ACE_STEP] Progress Bar initialized for {total_steps} steps")
+                    except ValueError:
+                        print(f"[ACE_STEP] Failed to parse total steps: {status}")
+                    continue
+                
                 log_messages.append(f"Step {step}: {status}")
                 print(f"[ACE_STEP_LORA_TRAIN] {status}")
+                
+                # Update Progress Bar
+                if pbar:
+                    pbar.update(1)
 
             final_status = log_messages[-1] if log_messages else "Training completed"
 
