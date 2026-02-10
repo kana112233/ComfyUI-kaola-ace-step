@@ -1970,11 +1970,22 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
                     yield 0, 0.0, f"❌ Training failed: {str(e)}"
                 finally:
                     self.is_training = False
-        # -------------------------------------------------------------------------
 
-        # Ensure gradients are enabled (ComfyUI runs in no_grad by default) inside this generic scope too
+    FUNCTION = "train_lora"
+    CATEGORY = "Ace-Step-1.5"
+    
+    # CRITICAL: ComfyUI runs nodes in inference_mode by default.
+    # We must explicitly disable it to allow gradient computation.
+    @torch.inference_mode(False)
+    def train_lora(self, tensor_dir, checkpoint_dir, config_path, 
+                  target_modules="to_q,to_k,to_v,to_out.0", 
+                  lora_rank=32, lora_alpha=32, lora_dropout=0.0,
+                  learning_rate=0.0001, batch_size=1, gradient_accumulation=4,
+                  train_epochs=10, save_every_n_epochs=2, seed=42):
+        
+        # Ensure we are not in inference mode and gradients are enabled
         torch.set_grad_enabled(True)
-
+        
         # Validate tensor directory
         if not os.path.exists(tensor_dir):
             return None, f"❌ Tensor directory not found: {tensor_dir}"
