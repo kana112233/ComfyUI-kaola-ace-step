@@ -1996,8 +1996,31 @@ class ACE_STEP_LORA_TRAIN(ACE_STEP_BASE):
         # to ensure gradients can be computed.
         try:
             from .acestep_sanitizer import sanitize_model_for_training
-            print("[ACE_STEP] Sanitizing model for training...")
-            dit_handler = sanitize_model_for_training(dit_handler)
+            print(f"[ACE_STEP] Sanitizing model for training...")
+            print(f"[ACE_STEP] dit_handler type: {type(dit_handler)}")
+            print(f"[ACE_STEP] Has .model attribute: {hasattr(dit_handler, 'model')}")
+            
+            # The sanitizer needs the actual torch.nn.Module, not the AceStepHandler wrapper
+            model_to_sanitize = dit_handler.model if hasattr(dit_handler, 'model') else dit_handler
+            print(f"[ACE_STEP] Model to sanitize type: {type(model_to_sanitize)}")
+            
+            # Perform sanitization
+            sanitized_model = sanitize_model_for_training(model_to_sanitize)
+            
+            # Update the handler's model reference if we unwrapped it
+            if hasattr(dit_handler, 'model'):
+                dit_handler.model = sanitized_model
+            else:
+                dit_handler = sanitized_model
+                
+            # Verify sanitization
+            decoder_check = sanitized_model.decoder if hasattr(sanitized_model, 'decoder') else None
+            if decoder_check:
+                params_with_grad = sum(1 for p in decoder_check.parameters() if p.requires_grad)
+                print(f"[ACE_STEP] Sanitization complete. Decoder params with grad (should be 0 before LoRA): {params_with_grad}")
+            else:
+                print(f"[ACE_STEP] ⚠️ WARNING: Could not find decoder to verify sanitization!")
+                
         except ImportError:
             print("[ACE_STEP] ⚠️ Could not import acestep_sanitizer. Training might fail with grad errors.")
         except Exception as e:
