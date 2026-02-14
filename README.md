@@ -15,6 +15,40 @@ ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5
 - 💡 **Simple Mode** - Natural language to music
 - 📝 **Format Sample** - Enhance user input
 - 🔍 **Understand Audio** - Analyze audio codes
+- 🎤 **Audio Transcription** - Transcribe lyrics from audio (NEW!)
+
+## Audio Transcription Technical Roadmap
+
+```mermaid
+graph TD
+    Start[🚀 Start: Select Audio Transcription Solution] --> Domain{Core Use Case?}
+
+    %% Branch 1: Music & Lyrics
+    Domain -- Music / Lyrics / Structure --> Music[Music Domain]
+    Music --> Hardware1{VRAM > 30GB?}
+    Hardware1 -- Yes --> ACE[<b>ACE-Step Transcriber</b><br>Base: Qwen2.5-Omni-7B]
+    ACE --> ACEDep[<u>Features</u>:<br>✅ 50+ Languages Support<br>✅ Lyrics + Structure Tags<br>✅ Timestamps via Prompt]
+    Hardware1 -- No --> Heart[<b>HeartTranscriptor-oss</b><br>0.8B Params]
+
+    %% Branch 2: Speech & Meetings
+    Domain -- Speech / Meetings / Translation --> Speech[Speech Domain]
+    Speech --> Duration{Duration & Coherence?}
+
+    %% VibeVoice Path
+    Duration -- Long Meeting --> Vibe[<b>VibeVoice-ASR</b><br>64K Context]
+
+    %% Whisper Path
+    Duration -- General / Short Audio --> Whisp[<b>Whisper-large-v3</b><br>Mature Ecosystem]
+    Whisp --> Speed{Speed Priority?}
+    Speed -- Fast --> WhispFast[torch.compile]
+    Speed -- Long Audio --> WhispLong[Pipeline Chunking]
+
+    %% Styles
+    classDef model fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef dep fill:#fff3e0,stroke:#ff6f00,stroke-width:1px,stroke-dasharray: 5 5;
+    class ACE,Heart,Vibe,Whisp,WhispFast,WhispLong model;
+    class ACEDep dep;
+```
 
 ## Quick Start
 
@@ -104,6 +138,43 @@ See [examples/](examples/) directory for ready-to-use workflows.
 | **ACE_STEP_SimpleMode** | Natural language generation |
 | **ACE_STEP_FormatSample** | Format and enhance input |
 | **ACE_STEP_Understand** | Analyze audio codes |
+| **ACE_STEP_TRANSCRIBER** | Transcribe lyrics from audio (50+ languages) |
+
+## ACE_STEP_TRANSCRIBER
+
+Audio transcription node powered by [ACE-Step Transcriber](https://huggingface.co/ACE-Step/acestep-transcriber) (Qwen2.5-Omni-7B).
+
+### Features
+- 🌍 **50+ Languages** - Chinese, English, Japanese, Korean, etc.
+- 🎵 **Lyrics Transcription** - Specialized for singing voice
+- 🏷️ **Structure Tags** - Auto identifies [Verse], [Chorus], [Bridge], etc.
+- ⏱️ **Timestamps** - Via prompt instruction
+- ✂️ **Chunked Processing** - Handle long audio automatically
+
+### Installation
+
+Download the model to your models folder:
+```bash
+# Using huggingface-cli
+huggingface-cli download ACE-Step/acestep-transcriber --local-dir ComfyUI/models/acestep-transcriber
+
+# Or place inside Ace-Step1.5 folder
+huggingface-cli download ACE-Step/acestep-transcriber --local-dir ComfyUI/models/Ace-Step1.5/acestep-transcriber
+```
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `language` | auto | Target language (auto/zh/en/ja/ko/etc.) |
+| `chunk_length_s` | 30 | Audio chunk length in seconds |
+| `max_new_tokens` | 4096 | Max output length |
+| `temperature` | 0.2 | Sampling temperature |
+| `top_p` | 0.95 | Nucleus sampling threshold |
+| `repetition_penalty` | 1.1 | Penalty for repeating tokens |
+| `num_beams` | 1 | Beam search (higher = slower but better) |
+| `seed` | 0 | Random seed (0 = random) |
+| `custom_prompt` | "" | Override default prompt |
 
 ## Requirements
 
