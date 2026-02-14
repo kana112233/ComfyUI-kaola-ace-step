@@ -50,6 +50,16 @@ graph TD
     class ACEDep dep;
 ```
 
+### 📋 Technical Dependency Matrix
+
+| Feature | ACE-Step Transcriber | VibeVoice-ASR | Whisper-large-v3 | HeartTranscriptor-oss |
+|---------|---------------------|---------------|------------------|----------------------|
+| 🏗️ **Core Arch** | Qwen2.5-Omni (Multimodal LLM) | VibeVoice (Unified ASR) | Transformer (Encoder-Decoder) | Whisper Variant |
+| 📦 **Library Deps** | Transformers (Preview), qwen-omni-utils, decord | vLLM (Recommended), Transformers | Transformers, flash-attn (Optional), accelerate | heartlib (GitHub), safetensors |
+| 🧠 **VRAM/Hardware** | **Very High** (~30GB+), Flash Attn 2 Recommended | **High** (64K Context, Single-Pass) | **Medium** (~24GB, Consumer GPU OK) | **Low** (0.8B, Edge devices) |
+| ✂️ **Input Logic** | Prompt Driven, requires process_mm_info | Long Context (60min Single-Pass), Hotwords | Chunking (30s limit), chunk_length_s=30 | Standard (heartlib loader) |
+| 🚫 **Constraints** | Version Lock: Qwen-Preview branch required | Memory Wall: Cannot chunk, must load 1hr at once | torch.compile incompatible with Chunking & Flash Attn 2 | Eco-Isolation: Independent codebase |
+
 ## Quick Start
 
 ### 1. Install ACE-Step (Python 3.11 Required!)
