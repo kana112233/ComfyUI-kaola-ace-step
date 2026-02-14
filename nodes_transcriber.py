@@ -244,10 +244,19 @@ class ACE_STEP_TRANSCRIBER:
             
             # Use apply_chat_template if available for correct special token formatting
             if hasattr(processor, "apply_chat_template"):
+                # Qwen2.5-Omni processor expects content to be a list of dictionaries
+                # e.g. [{"type": "text", "text": "..."}]
                 messages = [
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": instruction}
+                    {
+                        "role": "system", 
+                        "content": [{"type": "text", "text": "You are a helpful assistant."}]
+                    },
+                    {
+                        "role": "user", 
+                        "content": [{"type": "text", "text": instruction}]
+                    }
                 ]
+                
                 # Qwen2.5-Omni processor usually handles <|audio_bos|><|AUDIO|><|audio_eos|> automatically
                 # when passing 'audio' argument to processor(). 
                 # We just need the text conversation format.
