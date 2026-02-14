@@ -292,21 +292,20 @@ class ACE_STEP_TRANSCRIBER:
 
             # Generate
             # max_new_tokens can be adjustable, but 256 or 512 is safe for standard sentences
+            # return_audio=False: Only return text, skip audio generation (saves memory and time)
             with torch.no_grad():
                 generation_output = model.generate(
-                    **inputs, 
-                    max_new_tokens=max_new_tokens, 
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
                     streamer=streamer,
                     temperature=temperature,
                     repetition_penalty=repetition_penalty,
-                    do_sample=True if temperature > 0 else False
+                    do_sample=True if temperature > 0 else False,
+                    return_audio=False  # Official Qwen2.5-Omni param: only return text
                 )
-            
-            # Qwen2.5-Omni generate returns (sequences, wav) tuple even if wav is empty
-            if isinstance(generation_output, tuple):
-                generated_ids = generation_output[0]
-            else:
-                generated_ids = generation_output
+
+            # With return_audio=False, output should be just the token ids
+            generated_ids = generation_output
 
             # Decode full output first
             full_output = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
