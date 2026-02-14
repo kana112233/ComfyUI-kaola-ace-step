@@ -72,6 +72,7 @@ class ACE_STEP_TRANSCRIBER:
                 "audio": ("AUDIO", {"tooltip": "Input audio to transcribe."}),
                 "model_id": (get_acestep_transcriber_models(), {"default": get_acestep_transcriber_models()[0], "tooltip": "Select the Qwen2.5-Omni model. Can be a local path (in models/acestep-transcriber) or a HuggingFace ID."}),
                 "device": (["cuda", "cpu", "mps", "auto"], {"default": "auto", "tooltip": "Inference device. Use 'auto' or 'mps' for Mac."}),
+                "dtype": (["auto", "float16", "float32"], {"default": "auto", "tooltip": "Model precision. 'auto' uses float16 for CUDA and float32 for CPU/MPS."}),
                 "chunk_length_s": ("FLOAT", {"default": 30.0, "min": 0.0, "max": 300.0, "step": 1.0, "tooltip": "Audio chunk length in seconds for processing."}),
                 "return_timestamps": (["true", "false", "word"], {"default": "false", "tooltip": "Whether to return timestamps. 'word' for word-level timestamps, 'true' for segment-level."}),
             }
@@ -82,8 +83,8 @@ class ACE_STEP_TRANSCRIBER:
     FUNCTION = "transcribe"
     CATEGORY = "ACE_STEP"
 
-    def transcribe(self, audio, model_id, device, chunk_length_s, return_timestamps):
-        print(f"ACE_STEP_TRANSCRIBER: Transcribing with model {model_id} on {device}")
+    def transcribe(self, audio, model_id, device, dtype, chunk_length_s, return_timestamps):
+        print(f"ACE_STEP_TRANSCRIBER: Transcribing with model {model_id} on {device} ({dtype})")
         
         # 1. Device Setup
         if device == "auto":
@@ -124,7 +125,13 @@ class ACE_STEP_TRANSCRIBER:
             print(f"ACE_STEP_TRANSCRIBER: Loading pipeline from {load_path}...")
             
             # Determine dtype
-            dtype = torch.float16 if device == "cuda" else torch.float32
+            torch_dtype = torch.float32 # default
+            if dtype == "auto":
+                 torch_dtype = torch.float16 if device == "cuda" else torch.float32
+            elif dtype == "float16":
+                 torch_dtype = torch.float16
+            elif dtype == "float32":
+                 torch_dtype = torch.float32
             
             # Load pipeline
             # trust_remote_code=True is CRITICAL for Qwen2.5-Omni
@@ -133,7 +140,7 @@ class ACE_STEP_TRANSCRIBER:
                 model=load_path,
                 device=device,
                 trust_remote_code=True,
-                torch_dtype=dtype
+                torch_dtype=torch_dtype
             )
             
             
@@ -215,7 +222,7 @@ class ACE_STEP_TRANSCRIBER:
             # Move to device and cast to correct dtype
             inputs = {k: v.to(device) for k, v in inputs.items()}
             # Note: feature extractor usually returns float32, but model might expect half if loaded in half
-            if dtype == torch.float16 and "input_features" in inputs:
+            if torch_dtype == torch.float16 and "input_features" in inputs:
                  inputs["input_features"] = inputs["input_features"].to(dtype=torch.float16)
 
             # Setup Streamer for Progress Bar
