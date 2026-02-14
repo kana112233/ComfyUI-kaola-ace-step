@@ -300,11 +300,8 @@ class ACE_STEP_TRANSCRIBER:
                     inputs["input_features"] = inputs["input_features"].to(dtype=torch.float16)
 
                 max_new_tokens = 512
-                if chunk_idx is not None:
-                    pbar = comfy.utils.ProgressBar(max_new_tokens)
-                    streamer = ComfyStreamer(pbar)
-                else:
-                    streamer = None
+                pbar = comfy.utils.ProgressBar(max_new_tokens)
+                streamer = ComfyStreamer(pbar)
 
                 with torch.no_grad():
                     generation_output = model.generate(
