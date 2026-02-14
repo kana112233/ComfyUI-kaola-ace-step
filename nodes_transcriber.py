@@ -95,6 +95,10 @@ class ACE_STEP_TRANSCRIBER:
         
         print(f"ACE_STEP_TRANSCRIBER: Resolved model path: {load_path}")
 
+        # 2.5 Memory Management
+        if device == "cuda":
+            torch.cuda.empty_cache()
+
         # 3. Model Loading
         # We use pipeline to load because it handles the custom Qwen2.5-Omni configuration reliably
         # where AutoModel sometimes fails with 'Incompatible safetensors'.
@@ -103,13 +107,17 @@ class ACE_STEP_TRANSCRIBER:
         try:
             print(f"ACE_STEP_TRANSCRIBER: Loading pipeline from {load_path}...")
             
+            # Determine dtype
+            dtype = torch.float16 if device == "cuda" else torch.float32
+            
             # Load pipeline
             # trust_remote_code=True is CRITICAL for Qwen2.5-Omni
             asr_pipeline = pipeline(
                 "automatic-speech-recognition",
                 model=load_path,
                 device=device,
-                trust_remote_code=True
+                trust_remote_code=True,
+                torch_dtype=dtype
             )
             
             model = asr_pipeline.model
@@ -148,8 +156,6 @@ class ACE_STEP_TRANSCRIBER:
         TARGET_SR = 16000
         if sample_rate != TARGET_SR:
             print(f"ACE_STEP_TRANSCRIBER: Resampling audio from {sample_rate}Hz to {TARGET_SR}Hz")
-            # librosa.resample expects [channels, samples] or [samples]
-            # Our waveform is [samples] (mono) at this point
             try:
                 waveform = librosa.resample(waveform, orig_sr=sample_rate, target_sr=TARGET_SR)
                 sample_rate = TARGET_SR
@@ -172,12 +178,16 @@ class ACE_STEP_TRANSCRIBER:
                 return_tensors="pt"
             )
             
-            # Move to device
+            # Move to device and cast to correct dtype
             inputs = {k: v.to(device) for k, v in inputs.items()}
-            
+            # Note: feature extractor usually returns float32, but model might expect half if loaded in half
+            if dtype == torch.float16 and "input_features" in inputs:
+                 inputs["input_features"] = inputs["input_features"].to(dtype=torch.float16)
+
             # Generate
             # max_new_tokens can be adjustable, but 256 or 512 is safe for standard sentences
-            generated_ids = model.generate(**inputs, max_new_tokens=512)
+            with torch.no_grad():
+                generated_ids = model.generate(**inputs, max_new_tokens=512)
             
             # Decode
             transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
