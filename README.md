@@ -142,3 +142,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - [ACE-Step GitHub](https://github.com/ace-step/ACE-Step-1.5)
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
+- [Changelog](CHANGELOG.md)
