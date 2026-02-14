@@ -77,6 +77,7 @@ class ACE_STEP_TRANSCRIBER:
                 "chunk_length_s": ("FLOAT", {"default": 30.0, "min": 0.0, "max": 300.0, "step": 1.0, "tooltip": "Audio chunk length in seconds for processing."}),
                 "return_timestamps": (["true", "false", "word"], {"default": "false", "tooltip": "Whether to return timestamps. 'word' for word-level timestamps, 'true' for segment-level."}),
                 "custom_prompt": ("STRING", {"default": "", "multiline": True, "tooltip": "Custom prompt to override built-in language prompts. e.g. 'Transcribe the audio to Chinese:'"}),
+                "max_new_tokens": ("INT", {"default": 4096, "min": 64, "max": 8192, "tooltip": "Maximum number of tokens to generate. Increase for longer lyrics."}),
                 "temperature": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.1, "tooltip": "Sampling temperature. Lower values are more deterministic."}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Nucleus sampling: cumulative probability threshold."}),
                 "repetition_penalty": ("FLOAT", {"default": 1.1, "min": 1.0, "max": 2.0, "step": 0.1, "tooltip": "Penalty for repeating tokens. Increase if output gets stuck in loops."}),
@@ -90,7 +91,7 @@ class ACE_STEP_TRANSCRIBER:
     FUNCTION = "transcribe"
     CATEGORY = "ACE_STEP"
 
-    def transcribe(self, audio, model_id, device, dtype, language, chunk_length_s, return_timestamps, custom_prompt="", temperature=0.2, top_p=0.95, repetition_penalty=1.1, num_beams=1, seed=0):
+    def transcribe(self, audio, model_id, device, dtype, language, chunk_length_s, return_timestamps, custom_prompt="", max_new_tokens=4096, temperature=0.2, top_p=0.95, repetition_penalty=1.1, num_beams=1, seed=0):
         print(f"ACE_STEP_TRANSCRIBER: Transcribing with model {model_id} on {device} ({dtype})")
 
         # Set random seed for reproducibility
@@ -325,7 +326,6 @@ class ACE_STEP_TRANSCRIBER:
                 if torch_dtype == torch.float16 and "input_features" in inputs:
                     inputs["input_features"] = inputs["input_features"].to(dtype=torch.float16)
 
-                max_new_tokens = 512
                 pbar = comfy.utils.ProgressBar(max_new_tokens)
                 streamer = ComfyStreamer(pbar)
 
