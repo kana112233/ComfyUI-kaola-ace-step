@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-kaola-ace-step"
 description = "ACE-Step 1.5 music generation nodes for ComfyUI - Generate high-quality music from text"
-version = "0.2.0"
+version = "0.3.0"
 license = { text = "MIT" }
 dependencies = [
     "torch>=2.0.0",
