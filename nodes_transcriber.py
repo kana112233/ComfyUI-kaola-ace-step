@@ -5,6 +5,22 @@ import numpy as np
 import librosa
 import folder_paths # Ensure this is accessible. It is provided by ComfyUI context.
 
+import comfy.utils
+import comfy.model_management
+from transformers.generation.streamers import BaseStreamer
+
+# Streamer for ComfyUI progress bar and interruption
+class ComfyStreamer(BaseStreamer):
+    def __init__(self, pbar):
+        self.pbar = pbar
+        
+    def put(self, value):
+        self.pbar.update(1)
+        comfy.model_management.throw_exception_if_processing_interrupted()
+        
+    def end(self):
+        pass
+
 # Constants
 ACESTEP_MODEL_NAME = "Ace-Step1.5"
 
@@ -134,6 +150,12 @@ class ACE_STEP_TRANSCRIBER:
                  if hasattr(model.generation_config, "disable_audio_generation"):
                     model.generation_config.disable_audio_generation = True
 
+            # Monkeypatch token2wav to ABSOLUTELY prevent OOM if the flags are ignored
+            # The model calls self.token2wav(...) which triggers the DiT generation.
+            if hasattr(model, 'token2wav'):
+                 print("ACE_STEP_TRANSCRIBER: Monkeypatching model.token2wav to prevent audio generation and OOM.")
+                 model.token2wav = lambda *args, **kwargs: None
+
             # Load processor separately to access features
             processor = AutoProcessor.from_pretrained(load_path, trust_remote_code=True)
             
@@ -196,10 +218,15 @@ class ACE_STEP_TRANSCRIBER:
             if dtype == torch.float16 and "input_features" in inputs:
                  inputs["input_features"] = inputs["input_features"].to(dtype=torch.float16)
 
+            # Setup Streamer for Progress Bar
+            max_new_tokens = 512
+            pbar = comfy.utils.ProgressBar(max_new_tokens)
+            streamer = ComfyStreamer(pbar)
+
             # Generate
             # max_new_tokens can be adjustable, but 256 or 512 is safe for standard sentences
             with torch.no_grad():
-                generated_ids = model.generate(**inputs, max_new_tokens=512)
+                generated_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, streamer=streamer)
             
             # Decode
             transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
