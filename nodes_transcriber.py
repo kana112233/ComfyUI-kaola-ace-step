@@ -164,12 +164,18 @@ class ACE_STEP_TRANSCRIBER:
                  print("ACE_STEP_TRANSCRIBER: Monkeypatching model.token2wav to prevent audio generation and OOM.")
                  
                  class DummyModule(torch.nn.Module):
+                     def __init__(self):
+                         super().__init__()
+                         # Register buffer to track device/dtype
+                         self.register_buffer("dummy_param", torch.tensor(0.0))
+
                      def forward(self, *args, **kwargs):
-                         return None
+                         # Return empty tensor instead of None to satisfy .float() check in generate()
+                         return torch.tensor([], device=self.dummy_param.device)
                      
                      @property
                      def dtype(self):
-                        return torch.float32 # Return a safe default or match model
+                        return self.dummy_param.dtype
                  
                  model.token2wav = DummyModule().to(device)
 
@@ -243,8 +249,14 @@ class ACE_STEP_TRANSCRIBER:
             # Generate
             # max_new_tokens can be adjustable, but 256 or 512 is safe for standard sentences
             with torch.no_grad():
-                generated_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, streamer=streamer)
+                generation_output = model.generate(**inputs, max_new_tokens=max_new_tokens, streamer=streamer)
             
+            # Qwen2.5-Omni generate returns (sequences, wav) tuple even if wav is empty
+            if isinstance(generation_output, tuple):
+                generated_ids = generation_output[0]
+            else:
+                generated_ids = generation_output
+
             # Decode
             transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
             
