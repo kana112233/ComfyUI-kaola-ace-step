@@ -79,6 +79,7 @@ class ACE_STEP_TRANSCRIBER:
                 "custom_prompt": ("STRING", {"default": "", "multiline": True, "tooltip": "Custom prompt to override built-in language prompts. e.g. 'Transcribe the audio to Chinese:'"}),
                 "temperature": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.1, "tooltip": "Sampling temperature. Lower values are more deterministic."}),
                 "repetition_penalty": ("FLOAT", {"default": 1.1, "min": 1.0, "max": 2.0, "step": 0.1, "tooltip": "Penalty for repeating tokens. Increase if output gets stuck in loops."}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "tooltip": "Random seed for reproducible results. 0 for random."}),
             }
         }
 
@@ -87,8 +88,17 @@ class ACE_STEP_TRANSCRIBER:
     FUNCTION = "transcribe"
     CATEGORY = "ACE_STEP"
 
-    def transcribe(self, audio, model_id, device, dtype, language, chunk_length_s, return_timestamps, custom_prompt="", temperature=0.2, repetition_penalty=1.1):
+    def transcribe(self, audio, model_id, device, dtype, language, chunk_length_s, return_timestamps, custom_prompt="", temperature=0.2, repetition_penalty=1.1, seed=0):
         print(f"ACE_STEP_TRANSCRIBER: Transcribing with model {model_id} on {device} ({dtype})")
+
+        # Set random seed for reproducibility
+        if seed != 0:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(seed)
+                torch.cuda.manual_seed_all(seed)
+            np.random.seed(seed)
+            print(f"ACE_STEP_TRANSCRIBER: Using seed {seed}")
         
         # 1. Device Setup
         if device == "auto":
