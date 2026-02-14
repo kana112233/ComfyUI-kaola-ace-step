@@ -229,8 +229,10 @@ class ACE_STEP_TRANSCRIBER:
             print("ACE_STEP_TRANSCRIBER: Running inference...")
             
             # Construct Prompt with Chat Template
-            instruction = "Transcribe the audio."
-            
+            # Official recommended prompt from ACE-Step: "Transcribe this audio in detail"
+            # See: https://huggingface.co/ACE-Step/acestep-transcriber
+            instruction = "Transcribe this audio in detail"
+
             lang_map = {
                 "zh": "Chinese", "en": "English", "ja": "Japanese", "ko": "Korean",
                 "fr": "French", "de": "German", "es": "Spanish", "it": "Italian",
@@ -240,7 +242,8 @@ class ACE_STEP_TRANSCRIBER:
             if custom_prompt.strip():
                 instruction = custom_prompt.strip()
             elif language in lang_map:
-                 instruction = f"Please transcribe the audio into {lang_map[language]}."
+                # Use official prompt format with language specification
+                instruction = f"Transcribe this audio in detail into {lang_map[language]}."
             
             # Use apply_chat_template if available for correct special token formatting
             if hasattr(processor, "apply_chat_template"):
