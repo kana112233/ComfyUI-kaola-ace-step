@@ -327,6 +327,11 @@ class ACE_STEP_TRANSCRIBER:
                     inputs["input_features"] = inputs["input_features"].to(dtype=torch.float16)
 
                 pbar = comfy.utils.ProgressBar(max_new_tokens)
+
+                # Beam search doesn't support streaming, but we still show progress
+                if num_beams > 1:
+                    print(f"ACE_STEP_TRANSCRIBER: Running beam search (num_beams={num_beams}), progress bar will update on completion...")
+
                 streamer = ComfyStreamer(pbar)
 
                 with torch.no_grad():
@@ -341,6 +346,10 @@ class ACE_STEP_TRANSCRIBER:
                         do_sample=True if temperature > 0 and num_beams == 1 else False,
                         return_audio=False
                     )
+
+                # Update progress bar to completion for beam search
+                if num_beams > 1:
+                    pbar.update(max_new_tokens)
 
                 generated_ids = generation_output
                 full_output = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
