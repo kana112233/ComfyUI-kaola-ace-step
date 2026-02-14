@@ -305,8 +305,27 @@ class ACE_STEP_TRANSCRIBER:
             else:
                 generated_ids = generation_output
 
-            # Decode
-            transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+            # Decode full output first
+            full_output = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+
+            # Extract only the assistant's response
+            # The prompt ends with "<|im_start|>assistant\n" and we want everything after that
+            transcription = full_output
+
+            # Try to extract content after the assistant marker
+            # Format: system\n...\nuser\n...\nassistant\n<ACTUAL_RESPONSE>
+            assistant_marker = "assistant"
+            if assistant_marker in full_output:
+                parts = full_output.split(assistant_marker)
+                if len(parts) > 1:
+                    # Take the last part (after the final "assistant")
+                    transcription = parts[-1].strip()
+
+            # Also try to remove any remaining role markers that might have been generated
+            # (in case the model continued generating more conversation turns)
+            for marker in ["system", "user"]:
+                if f"\n{marker}" in transcription:
+                    transcription = transcription.split(f"\n{marker}")[0].strip()
             
             print(f"ACE_STEP_TRANSCRIBER: Result: {transcription[:50]}...")
             return (transcription,)
