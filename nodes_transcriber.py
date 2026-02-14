@@ -73,7 +73,7 @@ class ACE_STEP_TRANSCRIBER:
                 "model_id": (get_acestep_transcriber_models(), {"default": get_acestep_transcriber_models()[0], "tooltip": "Select the Qwen2.5-Omni model. Can be a local path (in models/acestep-transcriber) or a HuggingFace ID."}),
                 "device": (["cuda", "cpu", "mps", "auto"], {"default": "auto", "tooltip": "Inference device. Use 'auto' or 'mps' for Mac."}),
                 "dtype": (["auto", "float16", "float32"], {"default": "auto", "tooltip": "Model precision. 'auto' uses float16 for CUDA and float32 for CPU/MPS."}),
-                "language": (["auto", "en", "zh"], {"default": "auto", "tooltip": "Target language for transcription. 'auto' uses default prompt."}),
+                "language": (["auto", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "ru", "pt"], {"default": "auto", "tooltip": "Target language for transcription. 'auto' uses default prompt."}),
                 "chunk_length_s": ("FLOAT", {"default": 30.0, "min": 0.0, "max": 300.0, "step": 1.0, "tooltip": "Audio chunk length in seconds for processing."}),
                 "return_timestamps": (["true", "false", "word"], {"default": "false", "tooltip": "Whether to return timestamps. 'word' for word-level timestamps, 'true' for segment-level."}),
                 "custom_prompt": ("STRING", {"default": "", "multiline": True, "tooltip": "Custom prompt to override built-in language prompts. e.g. 'Transcribe the audio to Chinese:'"}),
@@ -230,12 +230,17 @@ class ACE_STEP_TRANSCRIBER:
             
             # Construct Prompt with Chat Template
             instruction = "Transcribe the audio."
+            
+            lang_map = {
+                "zh": "Chinese", "en": "English", "ja": "Japanese", "ko": "Korean",
+                "fr": "French", "de": "German", "es": "Spanish", "it": "Italian",
+                "ru": "Russian", "pt": "Portuguese"
+            }
+
             if custom_prompt.strip():
                 instruction = custom_prompt.strip()
-            elif language == "zh":
-                 instruction = "Please transcribe the audio into Chinese."
-            elif language == "en":
-                 instruction = "Please transcribe the audio into English."
+            elif language in lang_map:
+                 instruction = f"Please transcribe the audio into {lang_map[language]}."
             
             # Use apply_chat_template if available for correct special token formatting
             if hasattr(processor, "apply_chat_template"):
