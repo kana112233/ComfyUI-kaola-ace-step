@@ -2,6 +2,7 @@
 import os
 import torch
 import numpy as np
+import librosa
 import folder_paths # Ensure this is accessible. It is provided by ComfyUI context.
 
 # Constants
@@ -142,6 +143,19 @@ class ACE_STEP_TRANSCRIBER:
             
         # Ensure float32
         waveform = waveform.astype(np.float32)
+
+        # Resample to 16kHz if needed (Qwen2.5-Omni/Whisper requires 16000)
+        TARGET_SR = 16000
+        if sample_rate != TARGET_SR:
+            print(f"ACE_STEP_TRANSCRIBER: Resampling audio from {sample_rate}Hz to {TARGET_SR}Hz")
+            # librosa.resample expects [channels, samples] or [samples]
+            # Our waveform is [samples] (mono) at this point
+            try:
+                waveform = librosa.resample(waveform, orig_sr=sample_rate, target_sr=TARGET_SR)
+                sample_rate = TARGET_SR
+            except Exception as e:
+                print(f"ACE_STEP_TRANSCRIBER: Resampling failed: {e}")
+                raise e
 
         # 5. Inference
         try:
