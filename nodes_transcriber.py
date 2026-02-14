@@ -78,7 +78,9 @@ class ACE_STEP_TRANSCRIBER:
                 "return_timestamps": (["true", "false", "word"], {"default": "false", "tooltip": "Whether to return timestamps. 'word' for word-level timestamps, 'true' for segment-level."}),
                 "custom_prompt": ("STRING", {"default": "", "multiline": True, "tooltip": "Custom prompt to override built-in language prompts. e.g. 'Transcribe the audio to Chinese:'"}),
                 "temperature": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.1, "tooltip": "Sampling temperature. Lower values are more deterministic."}),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Nucleus sampling: cumulative probability threshold."}),
                 "repetition_penalty": ("FLOAT", {"default": 1.1, "min": 1.0, "max": 2.0, "step": 0.1, "tooltip": "Penalty for repeating tokens. Increase if output gets stuck in loops."}),
+                "num_beams": ("INT", {"default": 1, "min": 1, "max": 8, "tooltip": "Number of beams for beam search. 1 = no beam search."}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffff, "tooltip": "Random seed for reproducible results. 0 for random."}),
             }
         }
@@ -88,7 +90,7 @@ class ACE_STEP_TRANSCRIBER:
     FUNCTION = "transcribe"
     CATEGORY = "ACE_STEP"
 
-    def transcribe(self, audio, model_id, device, dtype, language, chunk_length_s, return_timestamps, custom_prompt="", temperature=0.2, repetition_penalty=1.1, seed=0):
+    def transcribe(self, audio, model_id, device, dtype, language, chunk_length_s, return_timestamps, custom_prompt="", temperature=0.2, top_p=0.95, repetition_penalty=1.1, num_beams=1, seed=0):
         print(f"ACE_STEP_TRANSCRIBER: Transcribing with model {model_id} on {device} ({dtype})")
 
         # Set random seed for reproducibility
@@ -331,10 +333,12 @@ class ACE_STEP_TRANSCRIBER:
                     generation_output = model.generate(
                         **inputs,
                         max_new_tokens=max_new_tokens,
-                        streamer=streamer,
+                        streamer=streamer if num_beams == 1 else None,  # beam search doesn't support streaming
                         temperature=temperature,
+                        top_p=top_p,
                         repetition_penalty=repetition_penalty,
-                        do_sample=True if temperature > 0 else False,
+                        num_beams=num_beams,
+                        do_sample=True if temperature > 0 and num_beams == 1 else False,
                         return_audio=False
                     )
 
