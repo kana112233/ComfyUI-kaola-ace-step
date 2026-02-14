@@ -224,10 +224,29 @@ class ACE_STEP_TRANSCRIBER:
                 print(f"ACE_STEP_TRANSCRIBER: Resampling failed: {e}")
                 raise e
 
+        # Calculate audio duration
+        audio_duration = len(waveform) / sample_rate
+        print(f"ACE_STEP_TRANSCRIBER: Audio duration: {audio_duration:.1f}s")
+
+        # Determine chunking strategy
+        OVERLAP_S = 5  # 5 second overlap between chunks
+        chunk_samples = int(chunk_length_s * sample_rate)
+        overlap_samples = int(OVERLAP_S * sample_rate)
+
+        # Only chunk if audio is longer than chunk_length
+        needs_chunking = audio_duration > chunk_length_s
+
+        if needs_chunking:
+            # Calculate number of chunks
+            step_samples = chunk_samples - overlap_samples
+            num_chunks = int(np.ceil((len(waveform) - overlap_samples) / step_samples))
+            print(f"ACE_STEP_TRANSCRIBER: Splitting into {num_chunks} chunks (chunk={chunk_length_s}s, overlap={OVERLAP_S}s)")
+        else:
+            num_chunks = 1
+            print(f"ACE_STEP_TRANSCRIBER: Processing as single chunk")
+
         # 5. Inference
         try:
-            print("ACE_STEP_TRANSCRIBER: Running inference...")
-            
             # Construct Prompt with Chat Template
             # Official recommended prompt from ACE-Step: "Transcribe this audio in detail"
             # See: https://huggingface.co/ACE-Step/acestep-transcriber
@@ -245,10 +264,8 @@ class ACE_STEP_TRANSCRIBER:
                 # Use official prompt format with language specification
                 instruction = f"Transcribe this audio in detail into {lang_map[language]}."
 
-            # Use apply_chat_template if available for correct special token formatting
+            # Build text prompt
             if hasattr(processor, "apply_chat_template"):
-                # Use Qwen official system prompt for better audio understanding
-                # Reference: https://huggingface.co/Qwen/Qwen2.5-Omni-7B
                 messages = [
                     {
                         "role": "system",
@@ -262,77 +279,101 @@ class ACE_STEP_TRANSCRIBER:
                         ]
                     }
                 ]
-
-                # Apply chat template - audio placeholder will be replaced by processor
                 text_prompt = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             else:
-                # Fallback manual formatting with Qwen system prompt
                 text_prompt = f"<|im_start|>system\nYou are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech.<|im_end|>\n<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
 
-            print(f"ACE_STEP_TRANSCRIBER: Using prompt: '{text_prompt}'")
+            print(f"ACE_STEP_TRANSCRIBER: Using prompt: '{text_prompt[:80]}...'")
             print(f"ACE_STEP_TRANSCRIBER: Generation params: temp={temperature}, rep_penalty={repetition_penalty}")
 
-            # Use processor to prepare inputs
-            inputs = processor(
-                text=[text_prompt], 
-                audio=waveform, 
-                sampling_rate=sample_rate, 
-                return_tensors="pt"
-            )
-            
-            # Move to device and cast to correct dtype
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-            # Note: feature extractor usually returns float32, but model might expect half if loaded in half
-            if torch_dtype == torch.float16 and "input_features" in inputs:
-                 inputs["input_features"] = inputs["input_features"].to(dtype=torch.float16)
-
-            # Setup Streamer for Progress Bar
-            max_new_tokens = 512
-            pbar = comfy.utils.ProgressBar(max_new_tokens)
-            streamer = ComfyStreamer(pbar)
-
-            # Generate
-            # max_new_tokens can be adjustable, but 256 or 512 is safe for standard sentences
-            # return_audio=False: Only return text, skip audio generation (saves memory and time)
-            with torch.no_grad():
-                generation_output = model.generate(
-                    **inputs,
-                    max_new_tokens=max_new_tokens,
-                    streamer=streamer,
-                    temperature=temperature,
-                    repetition_penalty=repetition_penalty,
-                    do_sample=True if temperature > 0 else False,
-                    return_audio=False  # Official Qwen2.5-Omni param: only return text
+            # Helper function to transcribe a single chunk
+            def transcribe_chunk(audio_chunk, chunk_idx=None):
+                inputs = processor(
+                    text=[text_prompt],
+                    audio=audio_chunk,
+                    sampling_rate=sample_rate,
+                    return_tensors="pt"
                 )
 
-            # With return_audio=False, output should be just the token ids
-            generated_ids = generation_output
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                if torch_dtype == torch.float16 and "input_features" in inputs:
+                    inputs["input_features"] = inputs["input_features"].to(dtype=torch.float16)
 
-            # Decode full output first
-            full_output = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+                max_new_tokens = 512
+                if chunk_idx is not None:
+                    pbar = comfy.utils.ProgressBar(max_new_tokens)
+                    streamer = ComfyStreamer(pbar)
+                else:
+                    streamer = None
 
-            # Extract only the assistant's response
-            # The prompt ends with "<|im_start|>assistant\n" and we want everything after that
-            transcription = full_output
+                with torch.no_grad():
+                    generation_output = model.generate(
+                        **inputs,
+                        max_new_tokens=max_new_tokens,
+                        streamer=streamer,
+                        temperature=temperature,
+                        repetition_penalty=repetition_penalty,
+                        do_sample=True if temperature > 0 else False,
+                        return_audio=False
+                    )
 
-            # Try to extract content after the assistant marker
-            # Format: system\n...\nuser\n...\nassistant\n<ACTUAL_RESPONSE>
-            assistant_marker = "assistant"
-            if assistant_marker in full_output:
-                parts = full_output.split(assistant_marker)
-                if len(parts) > 1:
-                    # Take the last part (after the final "assistant")
-                    transcription = parts[-1].strip()
+                generated_ids = generation_output
+                full_output = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
 
-            # Also try to remove any remaining role markers that might have been generated
-            # (in case the model continued generating more conversation turns)
-            for marker in ["system", "user"]:
-                if f"\n{marker}" in transcription:
-                    transcription = transcription.split(f"\n{marker}")[0].strip()
-            
-            print(f"ACE_STEP_TRANSCRIBER: Result: {transcription[:50]}...")
+                # Extract assistant's response
+                transcription = full_output
+                assistant_marker = "assistant"
+                if assistant_marker in full_output:
+                    parts = full_output.split(assistant_marker)
+                    if len(parts) > 1:
+                        transcription = parts[-1].strip()
+
+                for marker in ["system", "user"]:
+                    if f"\n{marker}" in transcription:
+                        transcription = transcription.split(f"\n{marker}")[0].strip()
+
+                return transcription
+
+            # Process chunks
+            all_transcriptions = []
+
+            if needs_chunking:
+                step_samples = chunk_samples - overlap_samples
+                for i in range(num_chunks):
+                    start = i * step_samples
+                    end = min(start + chunk_samples, len(waveform))
+                    chunk = waveform[start:end]
+
+                    chunk_duration = len(chunk) / sample_rate
+                    print(f"ACE_STEP_TRANSCRIBER: Processing chunk {i+1}/{num_chunks} ({chunk_duration:.1f}s)")
+
+                    chunk_result = transcribe_chunk(chunk, chunk_idx=i)
+                    all_transcriptions.append(chunk_result)
+                    print(f"ACE_STEP_TRANSCRIBER: Chunk {i+1} result: {chunk_result[:50]}...")
+
+                # Merge transcriptions
+                # Simple merge: concatenate with newlines, remove duplicate headers
+                merged = []
+                seen_header = False
+                for trans in all_transcriptions:
+                    lines = trans.split('\n')
+                    for line in lines:
+                        # Skip duplicate language headers after first chunk
+                        if line.strip().startswith('# Languages') or line.strip().startswith('# Lyrics'):
+                            if not seen_header or line.strip() != '# Lyrics':
+                                merged.append(line)
+                                seen_header = True
+                        else:
+                            merged.append(line)
+
+                transcription = '\n'.join(merged)
+            else:
+                print("ACE_STEP_TRANSCRIBER: Running inference...")
+                transcription = transcribe_chunk(waveform)
+
+            print(f"ACE_STEP_TRANSCRIBER: Final result: {transcription[:100]}...")
             return (transcription,)
-            
+
         except Exception as e:
             print(f"ACE_STEP_TRANSCRIBER: Inference failed: {e}")
             raise e
