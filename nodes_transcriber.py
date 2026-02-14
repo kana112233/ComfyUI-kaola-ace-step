@@ -73,8 +73,12 @@ class ACE_STEP_TRANSCRIBER:
                 "model_id": (get_acestep_transcriber_models(), {"default": get_acestep_transcriber_models()[0], "tooltip": "Select the Qwen2.5-Omni model. Can be a local path (in models/acestep-transcriber) or a HuggingFace ID."}),
                 "device": (["cuda", "cpu", "mps", "auto"], {"default": "auto", "tooltip": "Inference device. Use 'auto' or 'mps' for Mac."}),
                 "dtype": (["auto", "float16", "float32"], {"default": "auto", "tooltip": "Model precision. 'auto' uses float16 for CUDA and float32 for CPU/MPS."}),
+                "language": (["auto", "en", "zh"], {"default": "auto", "tooltip": "Target language for transcription. 'auto' uses default prompt."}),
                 "chunk_length_s": ("FLOAT", {"default": 30.0, "min": 0.0, "max": 300.0, "step": 1.0, "tooltip": "Audio chunk length in seconds for processing."}),
                 "return_timestamps": (["true", "false", "word"], {"default": "false", "tooltip": "Whether to return timestamps. 'word' for word-level timestamps, 'true' for segment-level."}),
+                "custom_prompt": ("STRING", {"default": "", "multiline": True, "tooltip": "Custom prompt to override built-in language prompts. e.g. 'Transcribe the audio to Chinese:'"}),
+                "temperature": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.1, "tooltip": "Sampling temperature. Lower values are more deterministic."}),
+                "repetition_penalty": ("FLOAT", {"default": 1.1, "min": 1.0, "max": 2.0, "step": 0.1, "tooltip": "Penalty for repeating tokens. Increase if output gets stuck in loops."}),
             }
         }
 
@@ -83,7 +87,7 @@ class ACE_STEP_TRANSCRIBER:
     FUNCTION = "transcribe"
     CATEGORY = "ACE_STEP"
 
-    def transcribe(self, audio, model_id, device, dtype, chunk_length_s, return_timestamps):
+    def transcribe(self, audio, model_id, device, dtype, language, chunk_length_s, return_timestamps, custom_prompt="", temperature=0.2, repetition_penalty=1.1):
         print(f"ACE_STEP_TRANSCRIBER: Transcribing with model {model_id} on {device} ({dtype})")
         
         # 1. Device Setup
@@ -224,12 +228,35 @@ class ACE_STEP_TRANSCRIBER:
         try:
             print("ACE_STEP_TRANSCRIBER: Running inference...")
             
-            # Qwen2.5-Omni requires a text prompt.
-            prompt = "Transcribe the audio:"
+            # Construct Prompt with Chat Template
+            instruction = "Transcribe the audio."
+            if custom_prompt.strip():
+                instruction = custom_prompt.strip()
+            elif language == "zh":
+                 instruction = "Please transcribe the audio into Chinese."
+            elif language == "en":
+                 instruction = "Please transcribe the audio into English."
             
+            # Use apply_chat_template if available for correct special token formatting
+            if hasattr(processor, "apply_chat_template"):
+                messages = [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": instruction}
+                ]
+                # Qwen2.5-Omni processor usually handles <|audio_bos|><|AUDIO|><|audio_eos|> automatically
+                # when passing 'audio' argument to processor(). 
+                # We just need the text conversation format.
+                text_prompt = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+            else:
+                # Fallback manual formatting
+                text_prompt = f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
+
+            print(f"ACE_STEP_TRANSCRIBER: Using prompt: '{text_prompt}'")
+            print(f"ACE_STEP_TRANSCRIBER: Generation params: temp={temperature}, rep_penalty={repetition_penalty}")
+
             # Use processor to prepare inputs
             inputs = processor(
-                text=[prompt], 
+                text=[text_prompt], 
                 audio=waveform, 
                 sampling_rate=sample_rate, 
                 return_tensors="pt"
@@ -249,7 +276,14 @@ class ACE_STEP_TRANSCRIBER:
             # Generate
             # max_new_tokens can be adjustable, but 256 or 512 is safe for standard sentences
             with torch.no_grad():
-                generation_output = model.generate(**inputs, max_new_tokens=max_new_tokens, streamer=streamer)
+                generation_output = model.generate(
+                    **inputs, 
+                    max_new_tokens=max_new_tokens, 
+                    streamer=streamer,
+                    temperature=temperature,
+                    repetition_penalty=repetition_penalty,
+                    do_sample=True if temperature > 0 else False
+                )
             
             # Qwen2.5-Omni generate returns (sequences, wav) tuple even if wav is empty
             if isinstance(generation_output, tuple):
