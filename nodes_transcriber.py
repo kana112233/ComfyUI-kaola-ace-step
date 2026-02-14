@@ -166,6 +166,10 @@ class ACE_STEP_TRANSCRIBER:
                  class DummyModule(torch.nn.Module):
                      def forward(self, *args, **kwargs):
                          return None
+                     
+                     @property
+                     def dtype(self):
+                        return torch.float32 # Return a safe default or match model
                  
                  model.token2wav = DummyModule().to(device)
 
