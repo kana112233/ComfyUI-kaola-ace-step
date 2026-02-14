@@ -4,7 +4,7 @@ ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5
 
 ## ⚠️ Important: Python Version Requirement
 
-> **ACE-Step requires Python 3.11**. It is NOT compatible with Python 3.12 or 3.13.  
+> **ACE-Step requires Python 3.11**. It is NOT compatible with Python 3.12 or 3.13.
 > If you're using ComfyUI with Python 3.13, you'll need to set up a Python 3.11 environment.
 
 ## Features
@@ -16,49 +16,6 @@ ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5
 - 📝 **Format Sample** - Enhance user input
 - 🔍 **Understand Audio** - Analyze audio codes
 - 🎤 **Audio Transcription** - Transcribe lyrics from audio (NEW!)
-
-## Audio Transcription Technical Roadmap
-
-```mermaid
-graph TD
-    Start[🚀 Start: Select Audio Transcription Solution] --> Domain{Core Use Case?}
-
-    %% Branch 1: Music & Lyrics
-    Domain -- Music / Lyrics / Structure --> Music[Music Domain]
-    Music --> Hardware1{VRAM > 30GB?}
-    Hardware1 -- Yes --> ACE[<b>ACE-Step Transcriber</b><br>Base: Qwen2.5-Omni-7B]
-    ACE --> ACEDep[<u>Features</u>:<br>✅ 50+ Languages Support<br>✅ Lyrics + Structure Tags<br>✅ Timestamps via Prompt]
-    Hardware1 -- No --> Heart[<b>HeartTranscriptor-oss</b><br>0.8B Params]
-
-    %% Branch 2: Speech & Meetings
-    Domain -- Speech / Meetings / Translation --> Speech[Speech Domain]
-    Speech --> Duration{Duration & Coherence?}
-
-    %% VibeVoice Path
-    Duration -- Long Meeting --> Vibe[<b>VibeVoice-ASR</b><br>64K Context]
-
-    %% Whisper Path
-    Duration -- General / Short Audio --> Whisp[<b>Whisper-large-v3</b><br>Mature Ecosystem]
-    Whisp --> Speed{Speed Priority?}
-    Speed -- Fast --> WhispFast[torch.compile]
-    Speed -- Long Audio --> WhispLong[Pipeline Chunking]
-
-    %% Styles
-    classDef model fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    classDef dep fill:#fff3e0,stroke:#ff6f00,stroke-width:1px,stroke-dasharray: 5 5;
-    class ACE,Heart,Vibe,Whisp,WhispFast,WhispLong model;
-    class ACEDep dep;
-```
-
-### 📋 Technical Dependency Matrix
-
-| Feature | ACE-Step Transcriber | VibeVoice-ASR | Whisper-large-v3 | HeartTranscriptor-oss |
-|---------|---------------------|---------------|------------------|----------------------|
-| 🏗️ **Core Arch** | Qwen2.5-Omni (Multimodal LLM) | VibeVoice (Unified ASR) | Transformer (Encoder-Decoder) | Whisper Variant |
-| 📦 **Library Deps** | Transformers (Preview), qwen-omni-utils, decord | vLLM (Recommended), Transformers | Transformers, flash-attn (Optional), accelerate | heartlib (GitHub), safetensors |
-| 🧠 **VRAM/Hardware** | **Very High** (~30GB+), Flash Attn 2 Recommended | **High** (64K Context, Single-Pass) | **Medium** (~24GB, Consumer GPU OK) | **Low** (0.8B, Edge devices) |
-| ✂️ **Input Logic** | Prompt Driven, requires process_mm_info | Long Context (60min Single-Pass), Hotwords | Chunking (30s limit), chunk_length_s=30 | Standard (heartlib loader) |
-| 🚫 **Constraints** | Version Lock: Qwen-Preview branch required | Memory Wall: Cannot chunk, must load 1hr at once | torch.compile incompatible with Chunking & Flash Attn 2 | Eco-Isolation: Independent codebase |
 
 ## Quick Start
 
@@ -214,6 +171,49 @@ ACE-Step requires Python 3.11. You need to:
 
 ### "Model path not found"
 Ensure models are in `ComfyUI/models/Ace-Step1.5/` with the correct subdirectory structure (see above).
+
+## Audio Transcription Technical Roadmap
+
+```mermaid
+graph TD
+    Start[🚀 Start: Select Audio Transcription Solution] --> Domain{Core Use Case?}
+
+    %% Branch 1: Music & Lyrics
+    Domain -- Music / Lyrics / Structure --> Music[Music Domain]
+    Music --> Hardware1{VRAM > 30GB?}
+    Hardware1 -- Yes --> ACE[<b>ACE-Step Transcriber</b><br>Base: Qwen2.5-Omni-7B]
+    ACE --> ACEDep[<u>Features</u>:<br>✅ 50+ Languages Support<br>✅ Lyrics + Structure Tags<br>✅ Timestamps via Prompt]
+    Hardware1 -- No --> Heart[<b>HeartTranscriptor-oss</b><br>0.8B Params]
+
+    %% Branch 2: Speech & Meetings
+    Domain -- Speech / Meetings / Translation --> Speech[Speech Domain]
+    Speech --> Duration{Duration & Coherence?}
+
+    %% VibeVoice Path
+    Duration -- Long Meeting --> Vibe[<b>VibeVoice-ASR</b><br>64K Context]
+
+    %% Whisper Path
+    Duration -- General / Short Audio --> Whisp[<b>Whisper-large-v3</b><br>Mature Ecosystem]
+    Whisp --> Speed{Speed Priority?}
+    Speed -- Fast --> WhispFast[torch.compile]
+    Speed -- Long Audio --> WhispLong[Pipeline Chunking]
+
+    %% Styles
+    classDef model fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef dep fill:#fff3e0,stroke:#ff6f00,stroke-width:1px,stroke-dasharray: 5 5;
+    class ACE,Heart,Vibe,Whisp,WhispFast,WhispLong model;
+    class ACEDep dep;
+```
+
+### 📋 Technical Dependency Matrix
+
+| Feature | ACE-Step Transcriber | VibeVoice-ASR | Whisper-large-v3 | HeartTranscriptor-oss |
+|---------|---------------------|---------------|------------------|----------------------|
+| 🏗️ **Core Arch** | Qwen2.5-Omni (Multimodal LLM) | VibeVoice (Unified ASR) | Transformer (Encoder-Decoder) | Whisper Variant |
+| 📦 **Library Deps** | Transformers (Preview), qwen-omni-utils, decord | vLLM (Recommended), Transformers | Transformers, flash-attn (Optional), accelerate | heartlib (GitHub), safetensors |
+| 🧠 **VRAM/Hardware** | **Very High** (~30GB+), Flash Attn 2 Recommended | **High** (64K Context, Single-Pass) | **Medium** (~24GB, Consumer GPU OK) | **Low** (0.8B, Edge devices) |
+| ✂️ **Input Logic** | Prompt Driven, requires process_mm_info | Long Context (60min Single-Pass), Hotwords | Chunking (30s limit), chunk_length_s=30 | Standard (heartlib loader) |
+| 🚫 **Constraints** | Version Lock: Qwen-Preview branch required | Memory Wall: Cannot chunk, must load 1hr at once | torch.compile incompatible with Chunking & Flash Attn 2 | Eco-Isolation: Independent codebase |
 
 ## License
 
