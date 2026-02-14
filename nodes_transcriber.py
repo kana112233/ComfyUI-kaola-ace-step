@@ -120,8 +120,20 @@ class ACE_STEP_TRANSCRIBER:
                 torch_dtype=dtype
             )
             
+            
             model = asr_pipeline.model
             
+            # CRITICAL: Disable audio generation to prevent OOM
+            # Qwen2.5-Omni tries to generate audio (DiT) by default during generation
+            # We only want text transcription.
+            if hasattr(model.config, "disable_audio_generation"):
+                model.config.disable_audio_generation = True
+            
+            # Also try setting it on generation_config if checked there
+            if hasattr(model, "generation_config"):
+                 if hasattr(model.generation_config, "disable_audio_generation"):
+                    model.generation_config.disable_audio_generation = True
+
             # Load processor separately to access features
             processor = AutoProcessor.from_pretrained(load_path, trust_remote_code=True)
             
