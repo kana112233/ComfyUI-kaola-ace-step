@@ -260,14 +260,14 @@ class ACE_STEP_TRANSCRIBER:
             # Construct Prompt with Chat Template
             # Official recommended prompt from ACE-Step: "Transcribe this audio in detail"
             # See: https://huggingface.co/ACE-Step/acestep-transcriber
-            instruction = "Transcribe this audio in detail"
 
             # Add timestamp instruction based on return_timestamps parameter
-            timestamp_instruction = ""
             if return_timestamps == "word":
-                timestamp_instruction = " Include word-level timestamps in [MM:SS.ms] format before each word."
+                instruction = "Transcribe this audio with word-level timestamps. Format each line as: [MM:SS.ms] word"
             elif return_timestamps == "true":
-                timestamp_instruction = " Include segment-level timestamps in [MM:SS] format before each line or section."
+                instruction = "Transcribe this audio with timestamps. Add [MM:SS] timestamp at the beginning of each section."
+            else:
+                instruction = "Transcribe this audio in detail"
 
             lang_map = {
                 "zh": "Chinese", "en": "English", "ja": "Japanese", "ko": "Korean",
@@ -279,9 +279,12 @@ class ACE_STEP_TRANSCRIBER:
                 instruction = custom_prompt.strip()
             elif language in lang_map:
                 # Use official prompt format with language specification
-                instruction = f"Transcribe this audio in detail into {lang_map[language]}.{timestamp_instruction}"
-            else:
-                instruction = f"Transcribe this audio in detail{timestamp_instruction}"
+                if return_timestamps == "word":
+                    instruction = f"Transcribe this audio into {lang_map[language]} with word-level timestamps. Format each line as: [MM:SS.ms] word"
+                elif return_timestamps == "true":
+                    instruction = f"Transcribe this audio into {lang_map[language]} with timestamps. Add [MM:SS] at the beginning of each section."
+                else:
+                    instruction = f"Transcribe this audio in detail into {lang_map[language]}."
 
             print(f"ACE_STEP_TRANSCRIBER: Instruction: {instruction}")
 
