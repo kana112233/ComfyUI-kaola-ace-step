@@ -159,9 +159,15 @@ class ACE_STEP_TRANSCRIBER:
 
             # Monkeypatch token2wav to ABSOLUTELY prevent OOM if the flags are ignored
             # The model calls self.token2wav(...) which triggers the DiT generation.
+            # We must replace it with a proper nn.Module, not a lambda, to satisfy PyTorch checks.
             if hasattr(model, 'token2wav'):
                  print("ACE_STEP_TRANSCRIBER: Monkeypatching model.token2wav to prevent audio generation and OOM.")
-                 model.token2wav = lambda *args, **kwargs: None
+                 
+                 class DummyModule(torch.nn.Module):
+                     def forward(self, *args, **kwargs):
+                         return None
+                 
+                 model.token2wav = DummyModule().to(device)
 
             # Load processor separately to access features
             processor = AutoProcessor.from_pretrained(load_path, trust_remote_code=True)
