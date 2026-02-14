@@ -1550,28 +1550,7 @@ class ACE_STEP_LORA_LOADER:
         },)
 
 
-# Node mappings for ComfyUI
-NODE_CLASS_MAPPINGS = {
-    "ACE_STEP_TextToMusic": ACE_STEP_TEXT_TO_MUSIC,
-    "ACE_STEP_Cover": ACE_STEP_COVER,
-    "ACE_STEP_Repaint": ACE_STEP_REPAINT,
-    "ACE_STEP_SimpleMode": ACE_STEP_SIMPLE_MODE,
-    "ACE_STEP_FormatSample": ACE_STEP_FORMAT_SAMPLE,
-    "ACE_STEP_CreateSample": ACE_STEP_CREATE_SAMPLE,
-    "ACE_STEP_Understand": ACE_STEP_UNDERSTAND,
-    "ACE_STEP_LoRALoader": ACE_STEP_LORA_LOADER,
-}
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "ACE_STEP_TextToMusic": "ACE-Step Text to Music",
-    "ACE_STEP_Cover": "ACE-Step Cover",
-    "ACE_STEP_Repaint": "ACE-Step Repaint",
-    "ACE_STEP_SimpleMode": "ACE-Step Simple Mode",
-    "ACE_STEP_FormatSample": "ACE-Step Format Sample",
-    "ACE_STEP_CreateSample": "ACE-Step Create Sample",
-    "ACE_STEP_Understand": "ACE-Step Understand",
-    "ACE_STEP_LoRALoader": "ACE-Step LoRA Loader",
-}
 
 
 # --------------------------------------------------------------------------------
@@ -1698,3 +1677,29 @@ class ACE_STEP_TRANSCRIBER:
             print(f"ACE_STEP_TRANSCRIBER: Inference failed: {e}")
             raise e
 
+
+
+# Node mappings for ComfyUI
+NODE_CLASS_MAPPINGS = {
+    "ACE_STEP_TextToMusic": ACE_STEP_TEXT_TO_MUSIC,
+    "ACE_STEP_Cover": ACE_STEP_COVER,
+    "ACE_STEP_Repaint": ACE_STEP_REPAINT,
+    "ACE_STEP_SimpleMode": ACE_STEP_SIMPLE_MODE,
+    "ACE_STEP_FormatSample": ACE_STEP_FORMAT_SAMPLE,
+    "ACE_STEP_CreateSample": ACE_STEP_CREATE_SAMPLE,
+    "ACE_STEP_Understand": ACE_STEP_UNDERSTAND,
+    "ACE_STEP_LoRALoader": ACE_STEP_LORA_LOADER,
+    "ACE_STEP_Transcriber": ACE_STEP_TRANSCRIBER,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "ACE_STEP_TextToMusic": "ACE-Step Text to Music",
+    "ACE_STEP_Cover": "ACE-Step Cover",
+    "ACE_STEP_Repaint": "ACE-Step Repaint",
+    "ACE_STEP_SimpleMode": "ACE-Step Simple Mode",
+    "ACE_STEP_FormatSample": "ACE-Step Format Sample",
+    "ACE_STEP_CreateSample": "ACE-Step Create Sample",
+    "ACE_STEP_Understand": "ACE-Step Understand",
+    "ACE_STEP_LoRALoader": "ACE-Step LoRA Loader",
+    "ACE_STEP_Transcriber": "ACE-Step Transcriber",
+}
