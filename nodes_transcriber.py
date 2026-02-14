@@ -79,7 +79,7 @@ class ACE_STEP_TRANSCRIBER:
                 "custom_prompt": ("STRING", {"default": "", "multiline": True, "tooltip": "Custom prompt to override built-in language prompts. e.g. 'Transcribe the audio to Chinese:'"}),
                 "temperature": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.1, "tooltip": "Sampling temperature. Lower values are more deterministic."}),
                 "repetition_penalty": ("FLOAT", {"default": 1.1, "min": 1.0, "max": 2.0, "step": 0.1, "tooltip": "Penalty for repeating tokens. Increase if output gets stuck in loops."}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "tooltip": "Random seed for reproducible results. 0 for random."}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffff, "tooltip": "Random seed for reproducible results. 0 for random."}),
             }
         }
 
