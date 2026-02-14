@@ -213,8 +213,8 @@ class ACE_STEP_TRANSCRIBER:
         # Ensure float32
         waveform = waveform.astype(np.float32)
 
-        # Resample to 16kHz if needed (Qwen2.5-Omni/Whisper requires 16000)
-        TARGET_SR = 16000
+        # Resample if needed (Qwen2.5-Omni processor handles internal resampling)
+        TARGET_SR = 24000
         if sample_rate != TARGET_SR:
             print(f"ACE_STEP_TRANSCRIBER: Resampling audio from {sample_rate}Hz to {TARGET_SR}Hz")
             try:
