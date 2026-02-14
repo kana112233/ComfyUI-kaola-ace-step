@@ -1572,3 +1572,129 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_Understand": "ACE-Step Understand",
     "ACE_STEP_LoRALoader": "ACE-Step LoRA Loader",
 }
+
+
+# --------------------------------------------------------------------------------
+# ACE-Step Transcriber Node
+# --------------------------------------------------------------------------------
+class ACE_STEP_TRANSCRIBER:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+                "model_id": ("STRING", {"default": "kana112233/ComfyUI-kaola-ace_step"}),
+                "device": (["cuda", "cpu", "mps", "auto"], {"default": "auto"}),
+                "chunk_length_s": ("FLOAT", {"default": 30.0, "min": 0.0, "max": 300.0, "step": 1.0}),
+                "return_timestamps": (["true", "false", "word"], {"default": "false"}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("transcription",)
+    FUNCTION = "transcribe"
+    CATEGORY = "ACE_STEP"
+
+    def transcribe(self, audio, model_id, device, chunk_length_s, return_timestamps):
+        print(f"ACE_STEP_TRANSCRIBER: Transcribing with model {model_id} on {device}")
+        
+        # 1. Device Setup
+        if device == "auto":
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+        
+        print(f"ACE_STEP_TRANSCRIBER: Using device: {device}")
+
+        # 2. Model Loading
+        # We use pipeline to load because it handles the custom Qwen2.5-Omni configuration reliably
+        # where AutoModel sometimes fails with 'Incompatible safetensors'.
+        from transformers import pipeline, AutoProcessor
+
+        try:
+            # Check for local path or simple model ID
+            # If path exists, use it; otherwise let transformers handle download/cache
+            load_path = model_id
+            
+            # Use snapshot_download if it looks like a repo ID and not a path, 
+            # effectively handling the 'modelscope' logic if needed, or rely on transformers cache.
+            # ideally we assume users map /path/to/model or use huggingface ID.
+            
+            print(f"ACE_STEP_TRANSCRIBER: Loading pipeline from {load_path}...")
+            
+            # Load pipeline
+            # trust_remote_code=True is CRITICAL for Qwen2.5-Omni
+            asr_pipeline = pipeline(
+                "automatic-speech-recognition",
+                model=load_path,
+                device=device,
+                trust_remote_code=True
+            )
+            
+            model = asr_pipeline.model
+            
+            # Load processor separately to access features
+            processor = AutoProcessor.from_pretrained(load_path, trust_remote_code=True)
+            
+            print("ACE_STEP_TRANSCRIBER: Model and Processor loaded successfully.")
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to load ASR model {model_id}: {e}")
+
+        # 3. Audio Preparation
+        # ComfyUI audio: {'waveform': [1, channels, samples], 'sample_rate': int}
+        waveform = audio['waveform']
+        sample_rate = audio['sample_rate']
+        
+        # Convert to numpy and mono
+        if isinstance(waveform, torch.Tensor):
+            waveform = waveform.cpu().numpy()
+        
+        # waveform shape is [batch, channels, samples]. 
+        if waveform.ndim == 3:
+            waveform = waveform[0] # [channels, samples]
+        
+        # Mix to mono if stereo
+        if waveform.ndim > 1 and waveform.shape[0] > 1:
+            waveform = np.mean(waveform, axis=0)
+        elif waveform.ndim > 1:
+             waveform = waveform[0]
+            
+        # Ensure float32
+        waveform = waveform.astype(np.float32)
+
+        # 4. Inference
+        try:
+            print("ACE_STEP_TRANSCRIBER: Running inference...")
+            
+            # Qwen2.5-Omni requires a text prompt.
+            prompt = "Transcribe the audio:"
+            
+            # Use processor to prepare inputs
+            inputs = processor(
+                text=[prompt], 
+                audio=waveform, 
+                sampling_rate=sample_rate, 
+                return_tensors="pt"
+            )
+            
+            # Move to device
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            
+            # Generate
+            # max_new_tokens can be adjustable, but 256 or 512 is safe for standard sentences
+            generated_ids = model.generate(**inputs, max_new_tokens=512)
+            
+            # Decode
+            transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+            
+            print(f"ACE_STEP_TRANSCRIBER: Result: {transcription[:50]}...")
+            return (transcription,)
+            
+        except Exception as e:
+            print(f"ACE_STEP_TRANSCRIBER: Inference failed: {e}")
+            raise e
+
