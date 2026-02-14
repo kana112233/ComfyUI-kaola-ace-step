@@ -244,29 +244,30 @@ class ACE_STEP_TRANSCRIBER:
             elif language in lang_map:
                 # Use official prompt format with language specification
                 instruction = f"Transcribe this audio in detail into {lang_map[language]}."
-            
+
             # Use apply_chat_template if available for correct special token formatting
             if hasattr(processor, "apply_chat_template"):
-                # Qwen2.5-Omni processor expects content to be a list of dictionaries
-                # e.g. [{"type": "text", "text": "..."}]
+                # Use Qwen official system prompt for better audio understanding
+                # Reference: https://huggingface.co/Qwen/Qwen2.5-Omni-7B
                 messages = [
                     {
-                        "role": "system", 
-                        "content": [{"type": "text", "text": "You are a helpful assistant."}]
+                        "role": "system",
+                        "content": [{"type": "text", "text": "You are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech."}]
                     },
                     {
-                        "role": "user", 
-                        "content": [{"type": "text", "text": instruction}]
+                        "role": "user",
+                        "content": [
+                            {"type": "audio", "audio": "placeholder"},
+                            {"type": "text", "text": instruction}
+                        ]
                     }
                 ]
-                
-                # Qwen2.5-Omni processor usually handles <|audio_bos|><|AUDIO|><|audio_eos|> automatically
-                # when passing 'audio' argument to processor(). 
-                # We just need the text conversation format.
+
+                # Apply chat template - audio placeholder will be replaced by processor
                 text_prompt = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             else:
-                # Fallback manual formatting
-                text_prompt = f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
+                # Fallback manual formatting with Qwen system prompt
+                text_prompt = f"<|im_start|>system\nYou are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech.<|im_end|>\n<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
 
             print(f"ACE_STEP_TRANSCRIBER: Using prompt: '{text_prompt}'")
             print(f"ACE_STEP_TRANSCRIBER: Generation params: temp={temperature}, rep_penalty={repetition_penalty}")
