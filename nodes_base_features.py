@@ -55,13 +55,7 @@ class ComfyProgressCallback:
             self.last_progress = current_step
             if desc:
                 print(f"[ACE-Step] {desc} ({int(progress * 100)}%)")
-    from acestep.llm_inference import LLMHandler
-    from acestep.inference import generate_music, GenerationParams, GenerationConfig
-    from acestep_wrapper import ACEStepWrapper
-    ACESTEP_BASE_AVAILABLE = True
-except ImportError:
-    ACESTEP_BASE_AVAILABLE = False
-    print("[ACE-Step Base Features] acestep module not found. Please ensure acestep_repo is downloaded.")
+
 
 # Constants
 ACESTEP_MODEL_NAME = "Ace-Step1.5"
