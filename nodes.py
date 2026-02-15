@@ -1563,6 +1563,12 @@ from nodes_transcriber import ACE_STEP_TRANSCRIBER
 # --------------------------------------------------------------------------------
 from nodes_captioner import ACE_STEP_CAPTIONER
 
+# --------------------------------------------------------------------------------
+# ACE-Step Base Model Features (Extract, Lego, Complete)
+# Only works with acestep-v15-base model, NOT turbo!
+# --------------------------------------------------------------------------------
+from nodes_base_features import ACE_STEP_EXTRACT, ACE_STEP_LEGO, ACE_STEP_COMPLETE
+
 
 # Node mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
@@ -1576,6 +1582,9 @@ NODE_CLASS_MAPPINGS = {
     "ACE_STEP_LoRALoader": ACE_STEP_LORA_LOADER,
     "ACE_STEP_Transcriber": ACE_STEP_TRANSCRIBER,
     "ACE_STEP_Captioner": ACE_STEP_CAPTIONER,
+    "ACE_STEP_Extract": ACE_STEP_EXTRACT,
+    "ACE_STEP_Lego": ACE_STEP_LEGO,
+    "ACE_STEP_Complete": ACE_STEP_COMPLETE,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1589,4 +1598,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_LoRALoader": "ACE-Step LoRA Loader",
     "ACE_STEP_Transcriber": "ACE-Step Transcriber",
     "ACE_STEP_Captioner": "ACE-Step Captioner",
+    "ACE_STEP_Extract": "ACE-Step Extract (Base Only)",
+    "ACE_STEP_Lego": "ACE-Step Lego (Base Only)",
+    "ACE_STEP_Complete": "ACE-Step Complete (Base Only)",
 }
