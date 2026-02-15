@@ -118,14 +118,24 @@ def initialize_handlers(checkpoint_dir: str, config_path: str, lm_model_path: st
     if device == "auto":
         device = auto_detect_device()
 
-    # Resolve paths - use ComfyUI models directory
-    checkpoint_dir = resolve_checkpoint_path(checkpoint_dir)
+    # Get the root model directory (Ace-Step1.5)
+    # checkpoint_dir from UI is like "acestep-v15-base", but we need the parent directory
+    model_root = os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)
 
-    # Check if checkpoint directory exists
-    if not os.path.exists(checkpoint_dir):
+    # config_path is the actual model subdirectory (e.g., "acestep-v15-base")
+    # If checkpoint_dir and config_path are the same, use model_root as checkpoint_dir
+    if checkpoint_dir == config_path or not config_path:
+        actual_checkpoint_dir = model_root
+        actual_config_path = checkpoint_dir
+    else:
+        actual_checkpoint_dir = os.path.join(model_root, checkpoint_dir) if not os.path.isabs(checkpoint_dir) else checkpoint_dir
+        actual_config_path = config_path
+
+    # Check if model directory exists
+    if not os.path.exists(actual_checkpoint_dir):
         raise RuntimeError(
-            f"Model directory not found: {checkpoint_dir}\n"
-            f"Please download ACE-Step models to: {os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)}\n"
+            f"Model directory not found: {actual_checkpoint_dir}\n"
+            f"Please download ACE-Step models to: {model_root}\n"
             f"See https://github.com/ACE-Step/Ace-Step1.5"
         )
 
@@ -133,8 +143,8 @@ def initialize_handlers(checkpoint_dir: str, config_path: str, lm_model_path: st
     _dit_handler = AceStepHandler()
     wrapper = ACEStepWrapper()
     wrapper.initialize(
-        checkpoint_dir=checkpoint_dir,
-        config_path=config_path,
+        checkpoint_dir=actual_checkpoint_dir,
+        config_path=actual_config_path,
         device=device,
     )
 
@@ -149,13 +159,13 @@ def initialize_handlers(checkpoint_dir: str, config_path: str, lm_model_path: st
     _dit_handler.quantization = None
 
     # Initialize LLM handler
-    lm_model_path_resolved = os.path.join(checkpoint_dir, lm_model_path)
+    lm_model_path_resolved = os.path.join(actual_checkpoint_dir, lm_model_path)
     if not os.path.exists(lm_model_path_resolved):
         lm_model_path_resolved = lm_model_path
 
     _llm_handler = LLMHandler()
     _llm_handler.initialize(
-        checkpoint_dir=checkpoint_dir,
+        checkpoint_dir=actual_checkpoint_dir,
         lm_model_path=lm_model_path_resolved,
         backend="pt",
         device=device,
