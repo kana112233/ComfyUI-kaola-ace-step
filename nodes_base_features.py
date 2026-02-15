@@ -18,15 +18,19 @@ import soundfile as sf
 from typing import Dict, Any, Tuple, Optional, List
 
 import folder_paths
+import comfy.utils
+import comfy.model_management
 
 # Add repo path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "acestep_repo"))
+sys.path.insert(0, os.path.dirname(__file__))  # For acestep_wrapper
 
 # Check if acestep is available
 try:
     from acestep.handler import AceStepHandler
     from acestep.llm_inference import LLMHandler
     from acestep.inference import generate_music, GenerationParams, GenerationConfig
+    from acestep_wrapper import ACEStepWrapper
     ACESTEP_BASE_AVAILABLE = True
 except ImportError:
     ACESTEP_BASE_AVAILABLE = False
@@ -104,31 +108,51 @@ def auto_detect_device() -> str:
 
 
 def initialize_handlers(checkpoint_dir: str, config_path: str, lm_model_path: str, device: str = "auto"):
-    """Initialize ACE-Step handlers."""
+    """Initialize ACE-Step handlers using ACEStepWrapper."""
     global _dit_handler, _llm_handler, _handlers_initialized
+
+    if _handlers_initialized:
+        if _dit_handler and getattr(_dit_handler, "model", None) is not None:
+            return _dit_handler, _llm_handler
 
     if device == "auto":
         device = auto_detect_device()
 
-    # Resolve paths
+    # Resolve paths - use ComfyUI models directory
     checkpoint_dir = resolve_checkpoint_path(checkpoint_dir)
-    lm_model_path_resolved = os.path.join(checkpoint_dir, lm_model_path)
-    if not os.path.exists(lm_model_path_resolved):
-        lm_model_path_resolved = lm_model_path
 
-    # Import acestep modules
-    from acestep.handler import AceStepHandler
-    from acestep.llm_inference import LLMHandler
+    # Check if checkpoint directory exists
+    if not os.path.exists(checkpoint_dir):
+        raise RuntimeError(
+            f"Model directory not found: {checkpoint_dir}\n"
+            f"Please download ACE-Step models to: {os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)}\n"
+            f"See https://github.com/ACE-Step/Ace-Step1.5"
+        )
 
-    # Initialize DiT handler
+    # Use ACEStepWrapper to initialize DiT components (avoids hardcoded checkpoints subdirectory)
     _dit_handler = AceStepHandler()
-    _dit_handler.initialize_service(
-        project_root=checkpoint_dir,
+    wrapper = ACEStepWrapper()
+    wrapper.initialize(
+        checkpoint_dir=checkpoint_dir,
         config_path=config_path,
         device=device,
     )
 
+    # Copy wrapper attributes to dit_handler
+    for attr in ['device', 'dtype', 'offload_to_cpu', 'model', 'vae',
+                 'text_encoder', 'text_tokenizer', 'silence_latent']:
+        if hasattr(wrapper, attr):
+            setattr(_dit_handler, attr, getattr(wrapper, attr))
+
+    _dit_handler.offload_dit_to_cpu = False
+    _dit_handler.config = _dit_handler.model.config
+    _dit_handler.quantization = None
+
     # Initialize LLM handler
+    lm_model_path_resolved = os.path.join(checkpoint_dir, lm_model_path)
+    if not os.path.exists(lm_model_path_resolved):
+        lm_model_path_resolved = lm_model_path
+
     _llm_handler = LLMHandler()
     _llm_handler.initialize(
         checkpoint_dir=checkpoint_dir,
@@ -139,6 +163,7 @@ def initialize_handlers(checkpoint_dir: str, config_path: str, lm_model_path: st
     )
 
     _handlers_initialized = True
+    print(f"[ACE-Step Base Features] Handlers initialized successfully")
     return _dit_handler, _llm_handler
 
 
