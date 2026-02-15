@@ -2,11 +2,6 @@
 
 ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5) - Commercial-grade music generation.
 
-## ⚠️ Important: Python Version Requirement
-
-> **ACE-Step requires Python 3.11**. It is NOT compatible with Python 3.12 or 3.13.
-> If you're using ComfyUI with Python 3.13, you'll need to set up a Python 3.11 environment.
-
 ## Features
 
 - 🎵 **Text to Music** - Generate music from text
@@ -15,16 +10,14 @@ ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5
 - 💡 **Simple Mode** - Natural language to music
 - 📝 **Format Sample** - Enhance user input
 - 🔍 **Understand Audio** - Analyze audio codes
-- 🎤 **Audio Transcription** - Transcribe lyrics from audio (NEW!)
+- 🎤 **Audio Transcription** - Transcribe lyrics from audio
+- 📋 **Audio Captioning** - Generate detailed music descriptions (NEW!)
 
 ## Quick Start
 
-### 1. Install ACE-Step (Python 3.11 Required!)
+### 1. Install ACE-Step
 
 ```bash
-# Ensure you're using Python 3.11
-python --version  # Should show Python 3.11.x
-
 git clone https://github.com/ACE-Step/ACE-Step-1.5.git
 cd ACE-Step-1.5
 pip install -e .
@@ -105,7 +98,8 @@ See [examples/](examples/) directory for ready-to-use workflows.
 | **ACE_STEP_SimpleMode** | Natural language generation |
 | **ACE_STEP_FormatSample** | Format and enhance input |
 | **ACE_STEP_Understand** | Analyze audio codes |
-| **ACE_STEP_TRANSCRIBER** | Transcribe lyrics from audio (50+ languages) |
+| **ACE_STEP_Transcriber** | Transcribe lyrics from audio (50+ languages) |
+| **ACE_STEP_Captioner** | Generate detailed music descriptions (NEW!) |
 
 ## ACE_STEP_TRANSCRIBER
 
@@ -143,9 +137,58 @@ huggingface-cli download ACE-Step/acestep-transcriber --local-dir ComfyUI/models
 | `seed` | 0 | Random seed (0 = random) |
 | `custom_prompt` | "" | Override default prompt |
 
+## ACE_STEP_Captioner
+
+Audio captioning node powered by [ACE-Step Captioner](https://huggingface.co/ACE-Step/acestep-captioner) (Qwen2.5-Omni-7B).
+
+### Features
+- 🎼 **Musical Style Analysis** - Identifies genres, sub-genres, and stylistic influences
+- 🎸 **Instrument Recognition** - Detects and describes 1000+ instrument types
+- 🎭 **Structure & Progression** - Analyzes musical arrangement (intro, verse, chorus, bridge, etc.)
+- 🔊 **Timbre Description** - Captures tonal qualities, textures, and sonic characteristics
+
+### Performance
+Accuracy surpasses Gemini Pro 2.5 in music description tasks.
+
+### Installation
+
+Download the model to your models folder:
+```bash
+# Using huggingface-cli
+huggingface-cli download ACE-Step/acestep-captioner --local-dir ComfyUI/models/Ace-Step1.5/acestep-captioner
+
+# Or using hfd (faster)
+pip install hfd
+hfd ACE-Step/acestep-captioner --local-dir ComfyUI/models/Ace-Step1.5/acestep-captioner
+```
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `model_id` | Ace-Step1.5/acestep-captioner | Model path (local or HuggingFace ID) |
+| `device` | auto | Device (auto/cuda/cpu/mps) |
+| `dtype` | auto | Precision (auto/float16/float32) |
+| `custom_prompt` | *Task* Describe this audio in detail | Prompt for captioning |
+| `max_new_tokens` | 1024 | Max output length |
+| `temperature` | 0.3 | Sampling temperature |
+| `top_p` | 0.9 | Nucleus sampling threshold |
+| `top_k` | 50 | Top-K sampling |
+| `repetition_penalty` | 1.1 | Penalty for repeating tokens |
+| `seed` | 0 | Random seed (0 = random) |
+| `chunk_length_s` | 30 | Audio chunk length for long audio |
+
+### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `caption` | Concise one-sentence summary |
+| `style_tags` | Comma-separated style/instrument tags |
+| `full_description` | Complete detailed description |
+
 ## Requirements
 
-- **Python**: 3.11 (required by ACE-Step, NOT compatible with 3.12/3.13)
+- **Python**: 3.10+
 - **GPU**: 6GB+ VRAM recommended
 - **Disk**: ~8GB for models
 
@@ -162,12 +205,6 @@ Use the **ACE-Step LoRA Loader** node to apply LoRA adaptations.
 ---
 
 ## Troubleshooting
-
-### "Cannot install ACE-Step with Python 3.13"
-ACE-Step requires Python 3.11. You need to:
-1. Install Python 3.11
-2. Create a new virtual environment with Python 3.11
-3. Run ComfyUI in that environment
 
 ### "Model path not found"
 Ensure models are in `ComfyUI/models/Ace-Step1.5/` with the correct subdirectory structure (see above).
