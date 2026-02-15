@@ -362,8 +362,6 @@ class ACE_STEP_COMPLETE:
         return {
             "required": {
                 "src_audio": ("AUDIO", {"tooltip": "Source audio to complete."}),
-                "track_classes": ("STRING", {"default": "drums, bass, strings", "tooltip": "Tracks to add."}),
-                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Style description."}),
                 "checkpoint_dir": (get_acestep_base_checkpoints(), {"default": "acestep-v15-base"}),
                 "config_path": (["acestep-v15-base"], {"default": "acestep-v15-base"}),
                 "lm_model_path": (get_acestep_lm_models(), {"default": "acestep-5Hz-lm-1.7B"}),
@@ -372,6 +370,21 @@ class ACE_STEP_COMPLETE:
                 "device": (["auto", "cuda", "cpu", "mps"], {"default": "auto"}),
             },
             "optional": {
+                # Track selection as boolean switches
+                "add_drums": ("BOOLEAN", {"default": True, "tooltip": "Add drums track"}),
+                "add_bass": ("BOOLEAN", {"default": True, "tooltip": "Add bass track"}),
+                "add_guitar": ("BOOLEAN", {"default": False, "tooltip": "Add guitar track"}),
+                "add_keyboard": ("BOOLEAN", {"default": False, "tooltip": "Add keyboard/piano track"}),
+                "add_strings": ("BOOLEAN", {"default": True, "tooltip": "Add strings track"}),
+                "add_synths": ("BOOLEAN", {"default": False, "tooltip": "Add synthesizer track"}),
+                "add_percussion": ("BOOLEAN", {"default": False, "tooltip": "Add percussion track"}),
+                "add_brass": ("BOOLEAN", {"default": False, "tooltip": "Add brass track"}),
+                "add_woodwinds": ("BOOLEAN", {"default": False, "tooltip": "Add woodwinds track"}),
+                "add_backing_vocals": ("BOOLEAN", {"default": False, "tooltip": "Add backing vocals track"}),
+                "add_fx": ("BOOLEAN", {"default": False, "tooltip": "Add FX/sound effects track"}),
+                "add_vocals": ("BOOLEAN", {"default": False, "tooltip": "Add vocals track"}),
+                # Other optional parameters
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Style description."}),
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac"}),
             },
@@ -382,11 +395,67 @@ class ACE_STEP_COMPLETE:
     FUNCTION = "complete"
     CATEGORY = "Audio/ACE-Step"
 
-    def complete(self, src_audio, track_classes, caption, checkpoint_dir, config_path, lm_model_path, seed, inference_steps, device, guidance_scale=7.0, audio_format="flac"):
+    def complete(
+        self,
+        src_audio,
+        checkpoint_dir,
+        config_path,
+        lm_model_path,
+        seed,
+        inference_steps,
+        device,
+        add_drums=True,
+        add_bass=True,
+        add_guitar=False,
+        add_keyboard=False,
+        add_strings=True,
+        add_synths=False,
+        add_percussion=False,
+        add_brass=False,
+        add_woodwinds=False,
+        add_backing_vocals=False,
+        add_fx=False,
+        add_vocals=False,
+        caption="",
+        guidance_scale=7.0,
+        audio_format="flac",
+    ):
         from acestep.inference import generate_music, GenerationParams, GenerationConfig
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+        # Build track list from boolean parameters
+        track_list = []
+        if add_drums:
+            track_list.append("DRUMS")
+        if add_bass:
+            track_list.append("BASS")
+        if add_guitar:
+            track_list.append("GUITAR")
+        if add_keyboard:
+            track_list.append("KEYBOARD")
+        if add_strings:
+            track_list.append("STRINGS")
+        if add_synths:
+            track_list.append("SYNTH")
+        if add_percussion:
+            track_list.append("PERCUSSION")
+        if add_brass:
+            track_list.append("BRASS")
+        if add_woodwinds:
+            track_list.append("WOODWINDS")
+        if add_backing_vocals:
+            track_list.append("BACKING_VOCALS")
+        if add_fx:
+            track_list.append("FX")
+        if add_vocals:
+            track_list.append("VOCALS")
+
+        if not track_list:
+            raise ValueError("Please select at least one track to add.")
+
+        track_classes_str = ", ".join(track_list)
 
         dit_handler, llm_handler = initialize_handlers(checkpoint_dir, config_path, lm_model_path, device)
 
@@ -396,8 +465,6 @@ class ACE_STEP_COMPLETE:
             sf.write(temp_path, waveform, src_audio["sample_rate"])
 
         try:
-            track_list = [t.strip().upper() for t in track_classes.split(",") if t.strip()]
-            track_classes_str = ", ".join(track_list)
             instruction = f"Complete the input track with {track_classes_str}:"
 
             params = GenerationParams(
@@ -426,7 +493,7 @@ class ACE_STEP_COMPLETE:
 
             metadata = json.dumps({
                 "task_type": "complete",
-                "track_classes": track_classes,
+                "track_classes": track_classes_str,
                 "seed": audio_data["params"].get("seed", seed),
             }, indent=2)
 
