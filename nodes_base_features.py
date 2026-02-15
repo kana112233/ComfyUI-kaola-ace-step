@@ -22,6 +22,16 @@ import folder_paths
 # Add repo path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "acestep_repo"))
 
+# Check if acestep is available
+try:
+    from acestep.handler import AceStepHandler
+    from acestep.llm_inference import LLMHandler
+    from acestep.inference import generate_music, GenerationParams, GenerationConfig
+    ACESTEP_BASE_AVAILABLE = True
+except ImportError:
+    ACESTEP_BASE_AVAILABLE = False
+    print("[ACE-Step Base Features] acestep module not found. Please ensure acestep_repo is downloaded.")
+
 # Constants
 ACESTEP_MODEL_NAME = "Ace-Step1.5"
 

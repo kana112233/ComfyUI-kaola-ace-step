@@ -1,0 +1,3 @@
+[submodule "acestep_repo"]
+	path = acestep_repo
+	url = https://github.com/ace-step/ACE-Step-1.5.git
