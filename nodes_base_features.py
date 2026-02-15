@@ -36,6 +36,33 @@ except ImportError:
     ACESTEP_BASE_AVAILABLE = False
     print("[ACE-Step Base Features] acestep module not found. Please ensure acestep_repo is downloaded.")
 
+
+class ComfyProgressCallback:
+    """Adapter to connect acestep progress to ComfyUI progress bar."""
+
+    def __init__(self, total_steps: int = 100):
+        self.pbar = comfy.utils.ProgressBar(total_steps)
+        self.last_progress = 0
+
+    def __call__(self, progress: float, desc: str = ""):
+        """Called by acestep with progress 0.0-1.0."""
+        current_step = int(progress * 100)
+        steps_to_add = current_step - self.last_progress
+        if steps_to_add > 0:
+            for _ in range(steps_to_add):
+                self.pbar.update(1)
+                comfy.model_management.throw_exception_if_processing_interrupted()
+            self.last_progress = current_step
+            if desc:
+                print(f"[ACE-Step] {desc} ({int(progress * 100)}%)")
+    from acestep.llm_inference import LLMHandler
+    from acestep.inference import generate_music, GenerationParams, GenerationConfig
+    from acestep_wrapper import ACEStepWrapper
+    ACESTEP_BASE_AVAILABLE = True
+except ImportError:
+    ACESTEP_BASE_AVAILABLE = False
+    print("[ACE-Step Base Features] acestep module not found. Please ensure acestep_repo is downloaded.")
+
 # Constants
 ACESTEP_MODEL_NAME = "Ace-Step1.5"
 
@@ -228,6 +255,10 @@ class ACE_STEP_EXTRACT:
 
         try:
             instruction = f"Extract the {track_name.upper()} track from the audio:"
+            print(f"[ACE_STEP_EXTRACT] Running diffusion...")
+
+            # Create progress callback for ComfyUI
+            progress_callback = ComfyProgressCallback(total_steps=100)
 
             params = GenerationParams(
                 task_type="extract",
@@ -242,7 +273,7 @@ class ACE_STEP_EXTRACT:
             config = GenerationConfig(batch_size=1, use_random_seed=(seed == -1), audio_format=audio_format)
 
             output_dir = folder_paths.get_output_directory()
-            result = generate_music(dit_handler, llm_handler, params, config, save_dir=output_dir)
+            result = generate_music(dit_handler, llm_handler, params, config, save_dir=output_dir, progress=progress_callback)
 
             if not result.success:
                 raise RuntimeError(f"Extract failed: {result.error}")
@@ -322,6 +353,9 @@ class ACE_STEP_LEGO:
             print(f"[ACE_STEP_LEGO] Running diffusion...")
             instruction = f"Generate the {track_name.upper()} track based on the audio context:"
 
+            # Create progress callback for ComfyUI
+            progress_callback = ComfyProgressCallback(total_steps=100)
+
             params = GenerationParams(
                 task_type="lego",
                 src_audio=temp_path,
@@ -337,7 +371,7 @@ class ACE_STEP_LEGO:
             config = GenerationConfig(batch_size=1, use_random_seed=(seed == -1), audio_format=audio_format)
 
             output_dir = folder_paths.get_output_directory()
-            result = generate_music(dit_handler, llm_handler, params, config, save_dir=output_dir)
+            result = generate_music(dit_handler, llm_handler, params, config, save_dir=output_dir, progress=progress_callback)
 
             if not result.success:
                 raise RuntimeError(f"Lego failed: {result.error}")
@@ -485,6 +519,9 @@ class ACE_STEP_COMPLETE:
             instruction = f"Complete the input track with {track_classes_str}:"
             print(f"[ACE_STEP_COMPLETE] Running diffusion...")
 
+            # Create progress callback for ComfyUI
+            progress_callback = ComfyProgressCallback(total_steps=100)
+
             params = GenerationParams(
                 task_type="complete",
                 src_audio=temp_path,
@@ -498,7 +535,7 @@ class ACE_STEP_COMPLETE:
             config = GenerationConfig(batch_size=1, use_random_seed=(seed == -1), audio_format=audio_format)
 
             output_dir = folder_paths.get_output_directory()
-            result = generate_music(dit_handler, llm_handler, params, config, save_dir=output_dir)
+            result = generate_music(dit_handler, llm_handler, params, config, save_dir=output_dir, progress=progress_callback)
 
             if not result.success:
                 raise RuntimeError(f"Complete failed: {result.error}")
