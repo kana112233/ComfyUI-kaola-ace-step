@@ -1556,12 +1556,12 @@ class ACE_STEP_LORA_LOADER:
 # --------------------------------------------------------------------------------
 # ACE-Step Transcriber Node
 # --------------------------------------------------------------------------------
-# --------------------------------------------------------------------------------
-# ACE-Step Transcriber Node
-# --------------------------------------------------------------------------------
 from nodes_transcriber import ACE_STEP_TRANSCRIBER
 
-
+# --------------------------------------------------------------------------------
+# ACE-Step Captioner Node
+# --------------------------------------------------------------------------------
+from nodes_captioner import ACE_STEP_CAPTIONER
 
 
 # Node mappings for ComfyUI
@@ -1575,6 +1575,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_STEP_Understand": ACE_STEP_UNDERSTAND,
     "ACE_STEP_LoRALoader": ACE_STEP_LORA_LOADER,
     "ACE_STEP_Transcriber": ACE_STEP_TRANSCRIBER,
+    "ACE_STEP_Captioner": ACE_STEP_CAPTIONER,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1587,4 +1588,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_Understand": "ACE-Step Understand",
     "ACE_STEP_LoRALoader": "ACE-Step LoRA Loader",
     "ACE_STEP_Transcriber": "ACE-Step Transcriber",
+    "ACE_STEP_Captioner": "ACE-Step Captioner",
 }
