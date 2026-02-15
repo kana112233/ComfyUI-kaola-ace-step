@@ -123,7 +123,7 @@ def initialize_handlers(checkpoint_dir: str, config_path: str, lm_model_path: st
     # Initialize DiT handler
     _dit_handler = AceStepHandler()
     _dit_handler.initialize_service(
-        checkpoint_dir=checkpoint_dir,
+        project_root=checkpoint_dir,
         config_path=config_path,
         device=device,
     )
