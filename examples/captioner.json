@@ -1,0 +1,285 @@
+{
+    "id": "captioner-example-001",
+    "revision": 0,
+    "last_node_id": 23,
+    "last_link_id": 6,
+    "nodes": [
+        {
+            "id": 5,
+            "type": "LoadAudio",
+            "pos": [
+                100,
+                100
+            ],
+            "size": [
+                300,
+                136
+            ],
+            "flags": {},
+            "order": 0,
+            "mode": 0,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "AUDIO",
+                    "type": "AUDIO",
+                    "links": [
+                        1,
+                        3
+                    ]
+                }
+            ],
+            "properties": {
+                "cnr_id": "comfy-core",
+                "ver": "0.12.3",
+                "Node name for S&R": "LoadAudio",
+                "ue_properties": {
+                    "widget_ue_connectable": {},
+                    "version": "7.5.2",
+                    "input_ue_unconnectable": {}
+                }
+            },
+            "widgets_values": [
+                "example.mp3",
+                null,
+                null
+            ]
+        },
+        {
+            "id": 22,
+            "type": "AudioCrop",
+            "pos": [
+                109.86611890477988,
+                388.42652751535473
+            ],
+            "size": [
+                270,
+                82
+            ],
+            "flags": {},
+            "order": 1,
+            "mode": 4,
+            "inputs": [
+                {
+                    "name": "audio",
+                    "type": "AUDIO",
+                    "link": 3
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "AUDIO",
+                    "type": "AUDIO",
+                    "links": [
+                        5,
+                        6
+                    ]
+                }
+            ],
+            "properties": {
+                "cnr_id": "audio-separation-nodes-comfyui",
+                "ver": "1.4.1",
+                "Node name for S&R": "AudioCrop",
+                "ue_properties": {
+                    "widget_ue_connectable": {},
+                    "input_ue_unconnectable": {},
+                    "version": "7.5.2"
+                }
+            },
+            "widgets_values": [
+                "0:00",
+                "3:00"
+            ]
+        },
+        {
+            "id": 23,
+            "type": "PreviewAudio",
+            "pos": [
+                447.82256571453144,
+                609.3148863542428
+            ],
+            "size": [
+                415.4717414867556,
+                88.51024244710447
+            ],
+            "flags": {},
+            "order": 3,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "audio",
+                    "type": "AUDIO",
+                    "link": 6
+                }
+            ],
+            "outputs": [],
+            "properties": {
+                "cnr_id": "comfy-core",
+                "ver": "0.12.3",
+                "Node name for S&R": "PreviewAudio",
+                "ue_properties": {
+                    "widget_ue_connectable": {},
+                    "input_ue_unconnectable": {},
+                    "version": "7.5.2"
+                }
+            },
+            "widgets_values": []
+        },
+        {
+            "id": 21,
+            "type": "PreviewAny",
+            "pos": [
+                900,
+                100
+            ],
+            "size": [
+                400,
+                400
+            ],
+            "flags": {},
+            "order": 4,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "source",
+                    "type": "*",
+                    "link": 4
+                }
+            ],
+            "outputs": [],
+            "properties": {
+                "cnr_id": "comfy-core",
+                "ver": "0.12.3",
+                "Node name for S&R": "PreviewAny",
+                "ue_properties": {
+                    "widget_ue_connectable": {},
+                    "version": "7.5.2",
+                    "input_ue_unconnectable": {}
+                }
+            },
+            "widgets_values": [
+                null,
+                null,
+                null
+            ]
+        },
+        {
+            "id": 20,
+            "type": "ACE_STEP_Captioner",
+            "pos": [
+                450,
+                100
+            ],
+            "size": [
+                400,
+                450
+            ],
+            "flags": {},
+            "order": 2,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "audio",
+                    "type": "AUDIO",
+                    "link": 5
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "caption",
+                    "type": "STRING",
+                    "links": [
+                        2,
+                        4
+                    ]
+                },
+                {
+                    "name": "style_tags",
+                    "type": "STRING",
+                    "links": []
+                },
+                {
+                    "name": "full_description",
+                    "type": "STRING",
+                    "links": []
+                }
+            ],
+            "properties": {
+                "aux_id": "kana112233/ComfyUI-kaola-ace-step",
+                "Node name for S&R": "ACE_STEP_Captioner",
+                "ue_properties": {
+                    "widget_ue_connectable": {},
+                    "version": "7.5.2",
+                    "input_ue_unconnectable": {}
+                }
+            },
+            "widgets_values": [
+                "ACE-Step/acestep-captioner",
+                "auto",
+                "auto",
+                "*Task* Describe this audio in detail",
+                1024,
+                0.3,
+                0.9,
+                50,
+                1.1,
+                0,
+                30
+            ]
+        }
+    ],
+    "links": [
+        [
+            3,
+            5,
+            0,
+            22,
+            0,
+            "AUDIO"
+        ],
+        [
+            4,
+            20,
+            0,
+            21,
+            0,
+            "STRING"
+        ],
+        [
+            5,
+            22,
+            0,
+            20,
+            0,
+            "AUDIO"
+        ],
+        [
+            6,
+            22,
+            0,
+            23,
+            0,
+            "AUDIO"
+        ]
+    ],
+    "groups": [],
+    "config": {},
+    "extra": {
+        "workflowRendererVersion": "LG",
+        "ue_links": [],
+        "ds": {
+            "scale": 0.9646149645000008,
+            "offset": [
+                87.39440543895806,
+                166.48160055057906
+            ]
+        },
+        "links_added_by_ue": [],
+        "frontendVersion": "1.38.13",
+        "VHS_latentpreview": false,
+        "VHS_latentpreviewrate": 0,
+        "VHS_MetadataImage": true,
+        "VHS_KeepIntermediate": true
+    },
+    "version": 0.4
+}
