@@ -66,6 +66,11 @@ TRACK_NAMES = [
     "keyboard", "percussion", "strings", "synth", "fx", "brass", "woodwinds"
 ]
 
+# Common languages for vocal generation
+VOCAL_LANGUAGES = [
+    "unknown", "zh", "en", "ja", "yue", "ko", "fr", "de", "es", "it", "ru", "pt"
+]
+
 
 def get_acestep_base_checkpoints():
     """Get available base model checkpoints."""
@@ -423,6 +428,9 @@ class ACE_STEP_COMPLETE:
                 "add_backing_vocals": ("BOOLEAN", {"default": False, "tooltip": "Add backing vocals track"}),
                 "add_fx": ("BOOLEAN", {"default": False, "tooltip": "Add FX/sound effects track"}),
                 "add_vocals": ("BOOLEAN", {"default": False, "tooltip": "Add vocals track"}),
+                # Vocal settings (important when add_vocals is True)
+                "vocal_language": (VOCAL_LANGUAGES, {"default": "unknown", "tooltip": "Language for vocals. Set when add_vocals=True."}),
+                "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Lyrics text. Set when add_vocals=True."}),
                 # Other optional parameters
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Style description (optional)."}),
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "CFG scale. Higher = more prompt adherence."}),
@@ -456,6 +464,8 @@ class ACE_STEP_COMPLETE:
         add_backing_vocals=False,
         add_fx=False,
         add_vocals=False,
+        vocal_language="unknown",
+        lyrics="",
         caption="",
         guidance_scale=7.0,
         audio_format="flac",
@@ -499,6 +509,7 @@ class ACE_STEP_COMPLETE:
 
         print(f"[ACE_STEP_COMPLETE] Starting generation...")
         print(f"  - Tracks to add: {track_classes_str}")
+        print(f"  - Vocal language: {vocal_language}")
         print(f"  - Inference steps: {inference_steps}")
         print(f"  - Device: {device}")
 
@@ -524,6 +535,8 @@ class ACE_STEP_COMPLETE:
                 inference_steps=inference_steps,
                 seed=seed,
                 guidance_scale=guidance_scale,
+                vocal_language=vocal_language,
+                lyrics=lyrics if lyrics else "",
             )
 
             config = GenerationConfig(batch_size=1, use_random_seed=(seed == -1), audio_format=audio_format)
