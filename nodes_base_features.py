@@ -13,7 +13,7 @@ import os
 import torch
 import tempfile
 import soundfile as sf
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 
 import folder_paths
 
@@ -29,13 +29,38 @@ TRACK_NAMES = [
 
 def get_acestep_base_checkpoints():
     """Get available base model checkpoints."""
-    from nodes import get_acestep_checkpoints
-    checkpoints = get_acestep_checkpoints()
+    model_dir = os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)
+    checkpoints = []
+
+    if os.path.exists(model_dir):
+        for name in os.listdir(model_dir):
+            full_path = os.path.join(model_dir, name)
+            if os.path.isdir(full_path):
+                checkpoints.append(name)
+
     # Filter to only include base model
     base_checkpoints = [c for c in checkpoints if "base" in c.lower()]
     if not base_checkpoints:
         base_checkpoints = ["acestep-v15-base"]
+
     return base_checkpoints
+
+
+def get_acestep_lm_models():
+    """Get available LM models."""
+    model_dir = os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)
+    models = []
+
+    if os.path.exists(model_dir):
+        for name in os.listdir(model_dir):
+            full_path = os.path.join(model_dir, name)
+            if os.path.isdir(full_path) and "lm" in name.lower():
+                models.append(name)
+
+    if not models:
+        models = ["acestep-5Hz-lm-1.7B", "acestep-5Hz-lm-0.6B", "acestep-5Hz-lm-4B"]
+
+    return sorted(models)
 
 
 class ACE_STEP_EXTRACT:
@@ -65,7 +90,7 @@ class ACE_STEP_EXTRACT:
                     "default": "acestep-v15-base",
                     "tooltip": "Must be acestep-v15-base for this feature."
                 }),
-                "lm_model_path": (["acestep-5Hz-lm-1.7B", "acestep-5Hz-lm-0.6B", "acestep-5Hz-lm-4B"], {
+                "lm_model_path": (get_acestep_lm_models(), {
                     "default": "acestep-5Hz-lm-1.7B",
                     "tooltip": "Language model for metadata generation."
                 }),
@@ -235,7 +260,7 @@ class ACE_STEP_LEGO:
                     "default": "acestep-v15-base",
                     "tooltip": "Must be acestep-v15-base for this feature."
                 }),
-                "lm_model_path": (["acestep-5Hz-lm-1.7B", "acestep-5Hz-lm-0.6B", "acestep-5Hz-lm-4B"], {
+                "lm_model_path": (get_acestep_lm_models(), {
                     "default": "acestep-5Hz-lm-1.7B",
                     "tooltip": "Language model for metadata generation."
                 }),
@@ -414,7 +439,7 @@ class ACE_STEP_COMPLETE:
                     "default": "acestep-v15-base",
                     "tooltip": "Must be acestep-v15-base for this feature."
                 }),
-                "lm_model_path": (["acestep-5Hz-lm-1.7B", "acestep-5Hz-lm-0.6B", "acestep-5Hz-lm-4B"], {
+                "lm_model_path": (get_acestep_lm_models(), {
                     "default": "acestep-5Hz-lm-1.7B",
                     "tooltip": "Language model for metadata generation."
                 }),
