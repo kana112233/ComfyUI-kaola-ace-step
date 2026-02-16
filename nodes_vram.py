@@ -7,7 +7,6 @@ to prevent OOM errors.
 
 import torch
 import gc
-import sys
 
 
 def _get_memory_info():
@@ -25,185 +24,142 @@ def _get_memory_info():
     return None
 
 
-def _delete_model_recursive(obj, visited=None):
-    """Recursively delete model and move tensors to CPU then delete."""
-    if visited is None:
-        visited = set()
-
-    # Avoid infinite recursion
-    obj_id = id(obj)
-    if obj_id in visited:
-        return
-    visited.add(obj_id)
-
-    # Handle torch Tensor - move to CPU then delete
-    if isinstance(obj, torch.Tensor):
-        try:
-            obj.cpu()
-            del obj
-        except Exception:
-            pass
+def _clear_cuda_memory():
+    """Clear CUDA memory aggressively."""
+    if not (hasattr(torch, 'cuda') and torch.cuda.is_available()):
         return
 
-    # Handle torch Module - recursively clean up
-    if isinstance(obj, torch.nn.Module):
-        # Move to CPU first
-        try:
-            obj.cpu()
-        except Exception:
-            pass
+    # Synchronize first
+    torch.cuda.synchronize()
 
-        # Delete parameters and buffers
-        for name, param in list(obj.named_parameters()):
-            try:
-                param.cpu()
-                del param
-            except Exception:
-                pass
-
-        for name, buf in list(obj.named_buffers()):
-            try:
-                buf.cpu()
-                del buf
-            except Exception:
-                pass
-
-        # Clear modules dict
-        try:
-            obj._modules.clear()
-        except Exception:
-            pass
-
-        # Clear parameters dict
-        try:
-            obj._parameters.clear()
-        except Exception:
-            pass
-
-        # Clear buffers dict
-        try:
-            obj._buffers.clear()
-        except Exception:
-            pass
-
-    # Handle dict
-    if isinstance(obj, dict):
-        for key in list(obj.keys()):
-            _delete_model_recursive(obj[key], visited)
-        obj.clear()
-
-    # Handle list/tuple/set
-    elif isinstance(obj, (list, set)):
-        for item in list(obj):
-            _delete_model_recursive(item, visited)
-        obj.clear()
-
-
-def _clear_handler(handler):
-    """Clear a single handler thoroughly."""
-    if handler is None:
-        return
-
-    # Get all attributes that might contain models/tensors
-    model_attrs = ['model', 'vae', 'text_encoder', 'text_tokenizer',
-                   'silence_latent', 'lm_model', 'tokenizer']
-
-    for attr in model_attrs:
-        if hasattr(handler, attr):
-            obj = getattr(handler, attr)
-            if obj is not None:
-                _delete_model_recursive(obj)
-                try:
-                    delattr(handler, attr)
-                except Exception:
-                    pass
-
-    # Also try to move the handler itself if it has a model
-    if hasattr(handler, 'model') and handler.model is not None:
-        try:
-            handler.model.cpu()
-        except Exception:
-            pass
-
-
-def _aggressive_memory_cleanup():
-    """Aggressive memory cleanup with multiple GC cycles."""
-    # Multiple GC cycles
-    for _ in range(3):
+    # Multiple rounds of cleanup
+    for _ in range(5):
         gc.collect()
-
-    # Clear CUDA
-    if hasattr(torch, 'cuda') and torch.cuda.is_available():
-        torch.cuda.synchronize()
         torch.cuda.empty_cache()
-        # Reset peak memory stats
+
+    # Reset memory stats
+    try:
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.reset_accumulated_memory_stats()
+    except Exception:
+        pass
+
+    # Final collection
+    gc.collect()
+    torch.cuda.empty_cache()
+
+
+def _delete_model(obj):
+    """Delete a model object and free its memory."""
+    if obj is None:
+        return
+
+    try:
+        # Move to CPU first
+        if hasattr(obj, 'cpu'):
+            obj.cpu()
+        elif hasattr(obj, 'to'):
+            obj.to('cpu')
+    except Exception:
+        pass
+
+    # If it's a module, clear its state
+    if isinstance(obj, torch.nn.Module):
+        # Zero out gradients
         try:
-            torch.cuda.reset_peak_memory_stats()
+            obj.zero_grad(True)
         except Exception:
             pass
 
-    # Clear MPS
-    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-        if hasattr(torch.mps, 'empty_cache'):
-            torch.mps.empty_cache()
+        # Clear hooks
+        try:
+            for handle in obj._forward_pre_hooks.values():
+                handle.remove()
+            obj._forward_pre_hooks.clear()
+        except Exception:
+            pass
 
-    # Clear XPU
-    if hasattr(torch, 'xpu') and torch.xpu.is_available():
-        if hasattr(torch.xpu, 'empty_cache'):
-            torch.xpu.empty_cache()
+        try:
+            for handle in obj._forward_hooks.values():
+                handle.remove()
+            obj._forward_hooks.clear()
+        except Exception:
+            pass
 
-    # Final GC
-    gc.collect()
+        try:
+            for handle in obj._backward_hooks.values():
+                handle.remove()
+            obj._backward_hooks.clear()
+        except Exception:
+            pass
+
+    # Delete the object
+    try:
+        del obj
+    except Exception:
+        pass
+
+
+def _clear_acestep_handlers():
+    """Clear all ACE-Step handlers and models."""
+    cleared_models = []
+
+    # Clear base features handlers
+    try:
+        import nodes_base_features as nbf
+
+        # Clear DiT handler
+        if hasattr(nbf, '_dit_handler') and nbf._dit_handler is not None:
+            handler = nbf._dit_handler
+            # Delete all model components
+            for attr in ['model', 'vae', 'text_encoder', 'text_tokenizer', 'silence_latent']:
+                if hasattr(handler, attr):
+                    obj = getattr(handler, attr)
+                    if obj is not None:
+                        _delete_model(obj)
+                        cleared_models.append(f"dit.{attr}")
+            nbf._dit_handler = None
+
+        # Clear LLM handler
+        if hasattr(nbf, '_llm_handler') and nbf._llm_handler is not None:
+            handler = nbf._llm_handler
+            # Delete LLM components
+            for attr in ['model', 'tokenizer', 'lm_model']:
+                if hasattr(handler, attr):
+                    obj = getattr(handler, attr)
+                    if obj is not None:
+                        _delete_model(obj)
+                        cleared_models.append(f"llm.{attr}")
+            nbf._llm_handler = None
+
+        # Reset initialization flag
+        if hasattr(nbf, '_handlers_initialized'):
+            nbf._handlers_initialized = False
+
+    except ImportError:
+        pass
+
+    # Also try to use ComfyUI's model management
+    try:
+        import comfy.model_management as mm
+
+        # Free all models from ComfyUI's management
+        mm.free_memory(1.0, mm.get_torch_device())
+        mm.soft_empty_cache()
+
+        cleared_models.append("comfyui_cache")
+
+    except ImportError:
+        pass
+
+    return cleared_models
 
 
 class ACE_STEP_CLEAR_VRAM:
-    """Clear GPU VRAM to free memory.
+    """Clear GPU VRAM and ACE-Step models.
 
-    This node clears the GPU memory cache. Use it after heavy operations
-    (like model inference) to prevent out-of-memory errors.
-
-    Supports: CUDA, MPS (Apple Silicon), XPU (Intel)
-    """
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {},
-            "optional": {
-                "any_input": ("*", {"tooltip": "Optional input to pass through. Connect from previous node."}),
-            },
-        }
-
-    RETURN_TYPES = ("*",)
-    RETURN_NAMES = ("pass_through",)
-    FUNCTION = "clear_vram"
-    CATEGORY = "Audio/ACE-Step"
-    OUTPUT_NODE = True
-
-    def clear_vram(self, any_input=None):
-        """Clear GPU memory cache."""
-        mem_before = _get_memory_info()
-
-        _aggressive_memory_cleanup()
-
-        mem_after = _get_memory_info()
-
-        if mem_before and mem_after:
-            freed = mem_before['used'] - mem_after['used']
-            print(f"[ACE_STEP_ClearVRAM] Memory: {mem_before['used']:.2f}GB -> {mem_after['used']:.2f}GB (freed: {freed:.2f}GB)")
-        else:
-            print("[ACE_STEP_ClearVRAM] GPU cache cleared")
-
-        return (any_input,)
-
-
-class ACE_STEP_CLEAR_ACESTEP_CACHE:
-    """Clear ACE-Step model handlers cache.
-
-    This node clears the internal ACE-Step handler cache, forcing
-    models to be reloaded on next use. Use this when switching
-    between different model configurations or when experiencing
-    memory issues.
+    This node clears all GPU memory including ACE-Step models.
+    Use it after ACE-Step operations to free VRAM for other tasks.
     """
 
     @classmethod
@@ -217,83 +173,88 @@ class ACE_STEP_CLEAR_ACESTEP_CACHE:
 
     RETURN_TYPES = ("*",)
     RETURN_NAMES = ("pass_through",)
-    FUNCTION = "clear_cache"
+    FUNCTION = "clear_vram"
     CATEGORY = "Audio/ACE-Step"
     OUTPUT_NODE = True
 
-    def clear_cache(self, any_input=None):
-        """Clear ACE-Step internal handler cache."""
+    def clear_vram(self, any_input=None):
+        """Clear all GPU memory."""
         mem_before = _get_memory_info()
 
-        # Clear base features handlers
-        try:
-            import nodes_base_features as nbf
+        # Clear ACE-Step handlers first
+        cleared = _clear_acestep_handlers()
 
-            if hasattr(nbf, '_dit_handler') and nbf._dit_handler is not None:
-                _clear_handler(nbf._dit_handler)
-                nbf._dit_handler = None
-
-            if hasattr(nbf, '_llm_handler') and nbf._llm_handler is not None:
-                _clear_handler(nbf._llm_handler)
-                nbf._llm_handler = None
-
-            if hasattr(nbf, '_handlers_initialized'):
-                nbf._handlers_initialized = False
-
-            print("[ACE_STEP_ClearCache] Base features handlers cleared")
-
-        except ImportError as e:
-            print(f"[ACE_STEP_ClearCache] Could not import base features: {e}")
-
-        # Clear main nodes handlers (ACE_STEP_BASE instances)
-        try:
-            import nodes as main_nodes
-
-            # Find all ACE_STEP_BASE instances in the module
-            for name in dir(main_nodes):
-                try:
-                    obj = getattr(main_nodes, name)
-                    if isinstance(obj, type) and hasattr(obj, '__mro__'):
-                        # Check if it's a subclass of ACE_STEP_BASE
-                        for base in obj.__mro__:
-                            if base.__name__ == 'ACE_STEP_BASE':
-                                # Clear class-level handlers if they exist
-                                if hasattr(obj, 'dit_handler'):
-                                    _clear_handler(obj.dit_handler)
-                                    obj.dit_handler = None
-                                if hasattr(obj, 'llm_handler'):
-                                    _clear_handler(obj.llm_handler)
-                                    obj.llm_handler = None
-                                if hasattr(obj, 'handlers_initialized'):
-                                    obj.handlers_initialized = False
-                                break
-                except Exception:
-                    pass
-
-        except ImportError:
-            pass
-
-        # Aggressive cleanup
-        _aggressive_memory_cleanup()
+        # Clear CUDA memory
+        _clear_cuda_memory()
 
         mem_after = _get_memory_info()
 
+        # Report
+        if cleared:
+            print(f"[ACE_STEP_ClearVRAM] Cleared: {', '.join(cleared)}")
+
         if mem_before and mem_after:
             freed = mem_before['used'] - mem_after['used']
-            print(f"[ACE_STEP_ClearCache] Memory: {mem_before['used']:.2f}GB -> {mem_after['used']:.2f}GB (freed: {freed:.2f}GB)")
+            print(f"[ACE_STEP_ClearVRAM] VRAM: {mem_before['used']:.2f}GB -> {mem_after['used']:.2f}GB (freed: {freed:.2f}GB)")
         else:
-            print("[ACE_STEP_ClearCache] ACE-Step cache cleared")
+            print("[ACE_STEP_ClearVRAM] GPU memory cleared")
 
         return (any_input,)
 
 
-# Node mappings will be added to nodes.py
+class ACE_STEP_FREE_MODEL:
+    """Free ACE-Step models from memory.
+
+    This node specifically clears the ACE-Step model cache,
+    forcing models to be reloaded on next use.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {},
+            "optional": {
+                "any_input": ("*", {"tooltip": "Optional input to pass through."}),
+            },
+        }
+
+    RETURN_TYPES = ("*",)
+    RETURN_NAMES = ("pass_through",)
+    FUNCTION = "free_model"
+    CATEGORY = "Audio/ACE-Step"
+    OUTPUT_NODE = True
+
+    def free_model(self, any_input=None):
+        """Free ACE-Step models only."""
+        mem_before = _get_memory_info()
+
+        # Clear handlers
+        cleared = _clear_acestep_handlers()
+
+        # Basic cleanup
+        gc.collect()
+        if hasattr(torch, 'cuda') and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        mem_after = _get_memory_info()
+
+        if cleared:
+            print(f"[ACE_STEP_FreeModel] Freed: {', '.join(cleared)}")
+
+        if mem_before and mem_after:
+            freed = mem_before['used'] - mem_after['used']
+            print(f"[ACE_STEP_FreeModel] VRAM: {mem_before['used']:.2f}GB -> {mem_after['used']:.2f}GB (freed: {freed:.2f}GB)")
+
+        return (any_input,)
+
+
+# Node mappings
 NODE_CLASS_MAPPINGS = {
     "ACE_STEP_ClearVRAM": ACE_STEP_CLEAR_VRAM,
-    "ACE_STEP_ClearCache": ACE_STEP_CLEAR_ACESTEP_CACHE,
+    "ACE_STEP_FreeModel": ACE_STEP_FREE_MODEL,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_ClearVRAM": "ACE-Step Clear VRAM",
-    "ACE_STEP_ClearCache": "ACE-Step Clear Model Cache",
+    "ACE_STEP_FreeModel": "ACE-Step Free Model",
 }
