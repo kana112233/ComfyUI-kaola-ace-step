@@ -11,7 +11,9 @@ ComfyUI custom nodes for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5
 - 📝 **Format Sample** - Enhance user input
 - 🔍 **Understand Audio** - Analyze audio codes
 - 🎤 **Audio Transcription** - Transcribe lyrics from audio
-- 📋 **Audio Captioning** - Generate detailed music descriptions (NEW!)
+- 📋 **Audio Captioning** - Generate detailed music descriptions
+- 🎸 **Extract/Lego/Complete** - Track extraction and manipulation (Base model)
+- 🧹 **Clear VRAM** - Free GPU memory after operations
 
 ## Quick Start
 
@@ -99,7 +101,13 @@ See [examples/](examples/) directory for ready-to-use workflows.
 | **ACE_STEP_FormatSample** | Format and enhance input |
 | **ACE_STEP_Understand** | Analyze audio codes |
 | **ACE_STEP_Transcriber** | Transcribe lyrics from audio (50+ languages) |
-| **ACE_STEP_Captioner** | Generate detailed music descriptions (NEW!) |
+| **ACE_STEP_Captioner** | Generate detailed music descriptions |
+| **ACE_STEP_Extract** | Extract instrument/vocal tracks (Base model) |
+| **ACE_STEP_Lego** | Add/modify instrument tracks (Base model) |
+| **ACE_STEP_Complete** | Complete missing tracks (Base model) |
+| **ACE_STEP_ClearVRAM** | Free GPU memory |
+
+📖 **Detailed usage guide**: See [USAGE.md](USAGE.md) for comprehensive documentation.
 
 ## ACE_STEP_TRANSCRIBER
 
