@@ -6,22 +6,10 @@ All notable changes to the ACE-Step ComfyUI Nodes project will be documented in 
 ## [v0.5.0] - 2026-02-16
 
 ### Added
-- **ACE_STEP_Extract Node** (Base Model Only):
-  - Extract specific tracks from mixed audio (vocals, drums, bass, guitar, piano, other).
-  - Supports high-quality extraction using base model with `thinking=False`.
-  - Advanced quality controls: `use_adg`, `cfg_interval_start`, `cfg_interval_end`.
-  - Example workflow: `examples/extract.json`.
-
-- **ACE_STEP_Lego Node** (Base Model Only):
-  - Add or modify specific instrument tracks in existing audio.
-  - Supports all track types with custom captions and instructions.
-  - Example workflow: `examples/lego.json`.
-
-- **ACE_STEP_Complete Node** (Base Model Only):
-  - Complete missing tracks from partial audio input.
-  - Selectively complete vocals, drums, bass, guitar, piano, and other tracks.
-  - Supports `lyrics` and `vocal_language` parameters for vocal generation.
-  - Example workflow: `examples/complete.json`.
+- **ACE_STEP_Extract Node**: Extract instrument/vocal tracks from mixed audio. See `docs/base_features.md`.
+- **ACE_STEP_Lego Node**: Add or modify instrument tracks in existing audio. See `docs/base_features.md`.
+- **ACE_STEP_Complete Node**: Complete missing tracks from partial audio. See `docs/base_features.md`.
+- **Documentation**: Added `docs/base_features.md` with detailed usage instructions.
 
 ## [v0.4.0] - 2026-02-15
 
