@@ -1,0 +1,236 @@
+{
+  "id": "extract-example-001",
+  "revision": 0,
+  "last_node_id": 6,
+  "last_link_id": 7,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "LoadAudio",
+      "pos": [
+        100,
+        100
+      ],
+      "size": [
+        315,
+        136
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.12.3",
+        "Node name for S&R": "LoadAudio",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.5.2",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "(-阿樊-)简单又好看的舞蹈大家一起跳起来！#一学就会系列 #护花使者 #根本停不下来 #秋天 #气氛组就位_f2316c281e24374569b912a851c18cea.mp4",
+        null,
+        null
+      ]
+    },
+    {
+      "id": 5,
+      "type": "ACE_STEP_ClearVRAM",
+      "pos": [
+        898.8314467786887,
+        -126.38585341477958
+      ],
+      "size": [
+        270,
+        58
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "any_input",
+          "shape": 7,
+          "type": "*",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "pass_through",
+          "type": "*",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "kana112233/ComfyUI-kaola-ace-step",
+        "ver": "ad0c0551de5f96c3b3b070d8118345bf12e53130",
+        "Node name for S&R": "ACE_STEP_ClearVRAM",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.2"
+        }
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 3,
+      "type": "PreviewAudio",
+      "pos": [
+        1190.2965398013991,
+        100.47784610125649
+      ],
+      "size": [
+        400,
+        100
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 4
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.12.3",
+        "Node name for S&R": "PreviewAudio",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.5.2",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 2,
+      "type": "ACE_STEP_Extract",
+      "pos": [
+        480,
+        100
+      ],
+      "size": [
+        400,
+        400
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "src_audio",
+          "type": "AUDIO",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            7
+          ]
+        },
+        {
+          "name": "audio_path",
+          "type": "STRING",
+          "links": []
+        },
+        {
+          "name": "metadata",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "properties": {
+        "aux_id": "kana112233/ComfyUI-kaola-ace-step",
+        "ver": "dbee2ef0ecc59841745938fece5ab7d81d9fe320",
+        "Node name for S&R": "ACE_STEP_EXTRACT",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.5.2",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "vocals",
+        62260971908601,
+        "randomize",
+        50,
+        7,
+        0,
+        0,
+        1,
+        "flac",
+        "acestep-v15-base",
+        "acestep-5Hz-lm-1.7B",
+        "auto"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "AUDIO"
+    ],
+    [
+      4,
+      5,
+      0,
+      3,
+      0,
+      "AUDIO"
+    ],
+    [
+      7,
+      2,
+      0,
+      5,
+      0,
+      "AUDIO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.7247295000000006,
+      "offset": [
+        354.4712863137634,
+        460.9366290340575
+      ]
+    },
+    "workflowRendererVersion": "LG",
+    "ue_links": [],
+    "links_added_by_ue": [],
+    "frontendVersion": "1.38.13",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}
