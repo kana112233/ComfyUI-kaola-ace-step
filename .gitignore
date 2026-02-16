@@ -49,6 +49,6 @@ Thumbs.db
 *.swp
 *.swo
 
-# ACE-Step repository (large, should be downloaded separately)
-acestep_repo/
+# ACE-Step repository (configured as git submodule)
+# acestep_repo/ is now a submodule, don't ignore it
 ACE-Step-1.5/
