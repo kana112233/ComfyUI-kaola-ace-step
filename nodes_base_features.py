@@ -224,6 +224,9 @@ class ACE_STEP_EXTRACT:
             },
             "optional": {
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "CFG scale. Higher = more prompt adherence."}),
+                "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance. May improve quality for base model."}),
+                "cfg_interval_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "CFG start ratio (0.0-1.0)."}),
+                "cfg_interval_end": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "tooltip": "CFG end ratio (0.0-1.0)."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio format."}),
             },
         }
@@ -233,7 +236,7 @@ class ACE_STEP_EXTRACT:
     FUNCTION = "extract"
     CATEGORY = "Audio/ACE-Step"
 
-    def extract(self, src_audio, track_name, checkpoint_dir, config_path, lm_model_path, seed, inference_steps, device, guidance_scale=7.0, audio_format="flac"):
+    def extract(self, src_audio, track_name, checkpoint_dir, config_path, lm_model_path, seed, inference_steps, device, guidance_scale=7.0, use_adg=False, cfg_interval_start=0.0, cfg_interval_end=1.0, audio_format="flac"):
         from acestep.inference import generate_music, GenerationParams, GenerationConfig
 
         print(f"[ACE_STEP_EXTRACT] Starting extraction...")
@@ -269,6 +272,9 @@ class ACE_STEP_EXTRACT:
                 guidance_scale=guidance_scale,
                 shift=3.0,  # Required for base model (not turbo)
                 thinking=False,  # IMPORTANT: Disable LM to use src_audio directly
+                use_adg=use_adg,
+                cfg_interval_start=cfg_interval_start,
+                cfg_interval_end=cfg_interval_end,
             )
 
             config = GenerationConfig(batch_size=1, use_random_seed=(seed == -1), audio_format=audio_format)
@@ -331,6 +337,9 @@ class ACE_STEP_LEGO:
                 "repainting_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 600.0, "tooltip": "Start time for repainting region (seconds)."}),
                 "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0, "tooltip": "End time for repainting region. -1 for until end."}),
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "CFG scale. Higher = more prompt adherence."}),
+                "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance. May improve quality for base model."}),
+                "cfg_interval_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "CFG start ratio (0.0-1.0)."}),
+                "cfg_interval_end": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "tooltip": "CFG end ratio (0.0-1.0)."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio format."}),
             },
         }
@@ -340,7 +349,7 @@ class ACE_STEP_LEGO:
     FUNCTION = "lego"
     CATEGORY = "Audio/ACE-Step"
 
-    def lego(self, src_audio, track_name, caption, checkpoint_dir, config_path, lm_model_path, seed, inference_steps, device, repainting_start=0.0, repainting_end=-1.0, guidance_scale=7.0, audio_format="flac"):
+    def lego(self, src_audio, track_name, caption, checkpoint_dir, config_path, lm_model_path, seed, inference_steps, device, repainting_start=0.0, repainting_end=-1.0, guidance_scale=7.0, use_adg=False, cfg_interval_start=0.0, cfg_interval_end=1.0, audio_format="flac"):
         from acestep.inference import generate_music, GenerationParams, GenerationConfig
 
         print(f"[ACE_STEP_LEGO] Starting generation...")
@@ -378,6 +387,9 @@ class ACE_STEP_LEGO:
                 guidance_scale=guidance_scale,
                 shift=3.0,  # Required for base model (not turbo)
                 thinking=False,  # IMPORTANT: Disable LM to use src_audio directly
+                use_adg=use_adg,
+                cfg_interval_start=cfg_interval_start,
+                cfg_interval_end=cfg_interval_end,
             )
 
             config = GenerationConfig(batch_size=1, use_random_seed=(seed == -1), audio_format=audio_format)
@@ -447,6 +459,9 @@ class ACE_STEP_COMPLETE:
                 # Other optional parameters
                 "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Style description (optional)."}),
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "CFG scale. Higher = more prompt adherence."}),
+                "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance. May improve quality for base model."}),
+                "cfg_interval_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "CFG start ratio (0.0-1.0)."}),
+                "cfg_interval_end": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "tooltip": "CFG end ratio (0.0-1.0)."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio format."}),
             },
         }
@@ -481,6 +496,9 @@ class ACE_STEP_COMPLETE:
         lyrics="",
         caption="",
         guidance_scale=7.0,
+        use_adg=False,
+        cfg_interval_start=0.0,
+        cfg_interval_end=1.0,
         audio_format="flac",
     ):
         from acestep.inference import generate_music, GenerationParams, GenerationConfig
@@ -551,6 +569,9 @@ class ACE_STEP_COMPLETE:
                 guidance_scale=guidance_scale,
                 shift=3.0,  # Required for base model (not turbo)
                 thinking=False,  # IMPORTANT: Disable LM to use src_audio directly
+                use_adg=use_adg,
+                cfg_interval_start=cfg_interval_start,
+                cfg_interval_end=cfg_interval_end,
                 vocal_language=vocal_language,
                 lyrics=lyrics if lyrics else "",
             )
