@@ -7,65 +7,182 @@
         {
             "id": 1,
             "type": "LoadAudio",
-            "pos": [100, 100],
-            "size": [315, 130],
+            "pos": [
+                100,
+                100
+            ],
+            "size": [
+                315,
+                136
+            ],
             "flags": {},
             "order": 0,
             "mode": 0,
             "inputs": [],
-            "outputs": [{"name": "AUDIO", "type": "AUDIO", "links": [1]}],
-            "properties": {"Node name for S&R": "LoadAudio"},
-            "widgets_values": ["example.mp3", null, null]
-        },
-        {
-            "id": 2,
-            "type": "ACE_STEP_Lego",
-            "pos": [480, 100],
-            "size": [400, 450],
-            "flags": {},
-            "order": 1,
-            "mode": 0,
-            "inputs": [{"name": "src_audio", "type": "AUDIO", "link": 1}],
             "outputs": [
-                {"name": "audio", "type": "AUDIO", "links": [2]},
-                {"name": "audio_path", "type": "STRING", "links": []},
-                {"name": "metadata", "type": "STRING", "links": []}
+                {
+                    "name": "AUDIO",
+                    "type": "AUDIO",
+                    "links": [
+                        1
+                    ]
+                }
             ],
-            "properties": {"Node name for S&R": "ACE_STEP_LEGO"},
+            "properties": {
+                "cnr_id": "comfy-core",
+                "ver": "0.12.3",
+                "Node name for S&R": "LoadAudio",
+                "ue_properties": {
+                    "widget_ue_connectable": {},
+                    "version": "7.5.2",
+                    "input_ue_unconnectable": {}
+                }
+            },
             "widgets_values": [
-                "drums",
-                "Add energetic drum beat",
-                -1,
-                50,
-                7.0,
-                0.0,
-                -1.0,
-                false,
-                0.0,
-                1.0,
-                "flac",
-                "acestep-v15-base",
-                "acestep-5Hz-lm-1.7B",
-                "auto"
+                "example.mp3",
+                null,
+                null
             ]
         },
         {
             "id": 3,
             "type": "PreviewAudio",
-            "pos": [930, 100],
-            "size": [400, 100],
+            "pos": [
+                930,
+                100
+            ],
+            "size": [
+                400,
+                100
+            ],
             "flags": {},
             "order": 2,
             "mode": 0,
-            "inputs": [{"name": "audio", "type": "AUDIO", "link": 2}],
+            "inputs": [
+                {
+                    "name": "audio",
+                    "type": "AUDIO",
+                    "link": 2
+                }
+            ],
             "outputs": [],
-            "properties": {"Node name for S&R": "PreviewAudio"},
+            "properties": {
+                "cnr_id": "comfy-core",
+                "ver": "0.12.3",
+                "Node name for S&R": "PreviewAudio",
+                "ue_properties": {
+                    "widget_ue_connectable": {},
+                    "version": "7.5.2",
+                    "input_ue_unconnectable": {}
+                }
+            },
             "widgets_values": []
+        },
+        {
+            "id": 2,
+            "type": "ACE_STEP_Lego",
+            "pos": [
+                480,
+                100
+            ],
+            "size": [
+                400,
+                464
+            ],
+            "flags": {},
+            "order": 1,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "src_audio",
+                    "type": "AUDIO",
+                    "link": 1
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "audio",
+                    "type": "AUDIO",
+                    "links": [
+                        2
+                    ]
+                },
+                {
+                    "name": "audio_path",
+                    "type": "STRING",
+                    "links": []
+                },
+                {
+                    "name": "metadata",
+                    "type": "STRING",
+                    "links": []
+                }
+            ],
+            "properties": {
+                "aux_id": "kana112233/ComfyUI-kaola-ace-step",
+                "ver": "5c3ef7dabbce2ecdc9a5015ede33a0451f99acae",
+                "Node name for S&R": "ACE_STEP_LEGO",
+                "ue_properties": {
+                    "widget_ue_connectable": {},
+                    "version": "7.5.2",
+                    "input_ue_unconnectable": {}
+                }
+            },
+            "widgets_values": [
+                "drums",
+                "Add energetic drum beat",
+                0,
+                "fixed",
+                50,
+                7,
+                1,
+                1,
+                0,
+                0,
+                1,
+                "flac",
+                "acestep-v15-base",
+                "acestep-5Hz-lm-4B",
+                "auto"
+            ]
         }
     ],
-    "links": [[1, 1, 0, 2, 0, "AUDIO"], [2, 2, 0, 3, 0, "AUDIO"]],
+    "links": [
+        [
+            1,
+            1,
+            0,
+            2,
+            0,
+            "AUDIO"
+        ],
+        [
+            2,
+            2,
+            0,
+            3,
+            0,
+            "AUDIO"
+        ]
+    ],
     "groups": [],
     "config": {},
-    "extra": {"ds": {"scale": 1.0, "offset": [0, 0]}},
+    "extra": {
+        "ds": {
+            "scale": 1.2839025177495011,
+            "offset": [
+                26.206736526716632,
+                104.0828012830973
+            ]
+        },
+        "workflowRendererVersion": "LG",
+        "ue_links": [],
+        "links_added_by_ue": [],
+        "frontendVersion": "1.38.13",
+        "VHS_latentpreview": false,
+        "VHS_latentpreviewrate": 0,
+        "VHS_MetadataImage": true,
+        "VHS_KeepIntermediate": true
+    },
     "version": 0.4
 }
