@@ -476,31 +476,32 @@ class ACE_STEP_COMPLETE:
             torch.cuda.empty_cache()
 
         # Build track list from boolean parameters
+        # IMPORTANT: Use lowercase track names to match official TRACK_NAMES
         track_list = []
         if add_drums:
-            track_list.append("DRUMS")
+            track_list.append("drums")
         if add_bass:
-            track_list.append("BASS")
+            track_list.append("bass")
         if add_guitar:
-            track_list.append("GUITAR")
+            track_list.append("guitar")
         if add_keyboard:
-            track_list.append("KEYBOARD")
+            track_list.append("keyboard")
         if add_strings:
-            track_list.append("STRINGS")
+            track_list.append("strings")
         if add_synths:
-            track_list.append("SYNTH")
+            track_list.append("synth")
         if add_percussion:
-            track_list.append("PERCUSSION")
+            track_list.append("percussion")
         if add_brass:
-            track_list.append("BRASS")
+            track_list.append("brass")
         if add_woodwinds:
-            track_list.append("WOODWINDS")
+            track_list.append("woodwinds")
         if add_backing_vocals:
-            track_list.append("BACKING_VOCALS")
+            track_list.append("backing_vocals")
         if add_fx:
-            track_list.append("FX")
+            track_list.append("fx")
         if add_vocals:
-            track_list.append("VOCALS")
+            track_list.append("vocals")
 
         if not track_list:
             raise ValueError("Please select at least one track to add.")
