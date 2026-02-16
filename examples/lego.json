@@ -19,7 +19,7 @@
         },
         {
             "id": 2,
-            "type": "ACE_STEP_LEGO",
+            "type": "ACE_STEP_Lego",
             "pos": [480, 100],
             "size": [400, 450],
             "flags": {},

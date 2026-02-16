@@ -19,7 +19,7 @@
         },
         {
             "id": 2,
-            "type": "ACE_STEP_COMPLETE",
+            "type": "ACE_STEP_Complete",
             "pos": [480, 100],
             "size": [400, 650],
             "flags": {},
