@@ -149,6 +149,130 @@ TextNode → Format Sample → TextNode (formatted)
 - `keyscale`: Detected key
 - `language`: Detected language
 
+### 7. Clear VRAM
+
+**Purpose**: Free GPU memory after ACE-Step operations
+
+**Key Parameters**:
+- `any_input` (optional): Pass-through input for workflow chaining
+
+**What it clears**:
+- ACE-Step DiT model (diffusion model)
+- ACE-Step LLM (language model)
+- VAE and text encoder
+- CUDA cache (3 rounds)
+- ComfyUI model cache
+
+**Outputs**:
+- `pass_through`: Pass-through of input (if connected)
+
+**Use Cases**:
+- Free VRAM after heavy operations
+- Prevent OOM errors before other GPU tasks
+- Switch between different models
+
+**Workflow Example**:
+```
+LoadAudio → ACE-Step Extract → ACE-Step ClearVRAM → PreviewAudio
+```
+
+**Console Output**:
+```
+[ACE_STEP_ClearVRAM] Starting VRAM cleanup...
+[ACE_STEP_ClearVRAM] Before: Allocated=12.50GB, Reserved=14.00GB
+[ACE_STEP_ClearVRAM] Clearing ACE-Step handlers...
+[ACE_STEP_ClearVRAM] Clearing CUDA cache (3 rounds)...
+[ACE_STEP_ClearVRAM]   Round 1/3 done
+[ACE_STEP_ClearVRAM]   Round 2/3 done
+[ACE_STEP_ClearVRAM]   Round 3/3 done
+[ACE_STEP_ClearVRAM] Models cleared: dit.model, dit.vae, llm.model
+[ACE_STEP_ClearVRAM] After: Allocated=2.10GB, Reserved=3.00GB
+[ACE_STEP_ClearVRAM] Total freed: 10.40GB
+```
+
+## Base Model Nodes (Extract, Lego, Complete)
+
+**Important**: These nodes require the **Base model** (`acestep-v15-base`), NOT the Turbo model.
+
+**Model Download**:
+```bash
+# Using huggingface-cli
+huggingface-cli download AceStep/ACE-Stepv1.5 --local-dir models/Ace-Step1.5/acestep-v15-base
+```
+
+### 8. Extract (Base Model Only)
+
+**Purpose**: Extract specific instrument/vocal tracks from mixed audio
+
+**Key Parameters**:
+- `src_audio` (required): Source audio to extract from
+- `track_name`: Track to extract
+  - `vocals`, `backing_vocals`, `drums`, `bass`, `guitar`, `keyboard`, `percussion`, `strings`, `synth`, `fx`, `brass`, `woodwinds`
+- `inference_steps`: Diffusion steps (default: 50, range: 20-100)
+- `guidance_scale`: CFG scale (default: 7.0, range: 1.0-15.0)
+- `use_adg`: Adaptive Dual Guidance for better quality
+
+**Outputs**:
+- `audio`: Extracted track audio
+- `audio_path`: Path to saved audio file
+- `metadata`: Generation metadata JSON
+
+**Workflow Example**:
+```
+LoadAudio → ACE-Step Extract → PreviewAudio
+              ├── track_name: "vocals"
+              └── inference_steps: 50
+```
+
+### 9. Lego (Base Model Only)
+
+**Purpose**: Add or modify specific instrument tracks based on audio context
+
+**Key Parameters**:
+- `src_audio` (required): Source audio as context
+- `track_name`: Track to generate (same options as Extract)
+- `caption`: Optional style description for the new track
+- `repainting_start`: Start time for region (seconds)
+- `repainting_end`: End time for region (-1 = until end)
+
+**Outputs**:
+- `audio`: Audio with new/modified track
+- `audio_path`: Path to saved audio file
+- `metadata`: Generation metadata JSON
+
+**Workflow Example**:
+```
+LoadAudio → ACE-Step Lego → PreviewAudio
+              ├── track_name: "drums"
+              ├── caption: "Add energetic drum beat"
+              └── inference_steps: 50
+```
+
+### 10. Complete (Base Model Only)
+
+**Purpose**: Complete missing tracks from partial audio
+
+**Key Parameters**:
+- `src_audio` (required): Source audio to complete
+- Track switches: `add_drums`, `add_bass`, `add_guitar`, `add_keyboard`, `add_strings`, `add_synths`, `add_percussion`, `add_brass`, `add_woodwinds`, `add_backing_vocals`, `add_fx`, `add_vocals`
+- `vocal_language`: Language for vocal generation (`unknown`, `zh`, `en`, `ja`, `ko`, etc.)
+- `lyrics`: Lyrics text for vocal tracks
+- `caption`: Style description
+
+**Outputs**:
+- `audio`: Completed audio with all selected tracks
+- `audio_path`: Path to saved audio file
+- `metadata`: Generation metadata JSON
+
+**Workflow Example**:
+```
+LoadAudio → ACE-Step Complete → PreviewAudio
+              ├── add_drums: true
+              ├── add_bass: true
+              ├── add_strings: true
+              └── caption: "Pop ballad style arrangement"
+```
+
 ## Common Workflows
 
 ### Workflow 1: Simple Text to Music

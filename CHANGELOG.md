@@ -3,6 +3,16 @@
 
 All notable changes to the ACE-Step ComfyUI Nodes project will be documented in this file.
 
+## [v0.6.0] - 2026-02-16
+
+### Added
+- **ACE_STEP_ClearVRAM Node**: Clear GPU VRAM and ACE-Step models.
+  - Clears ACE-Step DiT and LLM handlers.
+  - Uses ComfyUI's memory management API.
+  - Multiple rounds of GC and cache cleanup.
+  - Shows detailed memory usage logs.
+- **Example Workflow**: Added `examples/extract-clean-VARM.json` demonstrating ClearVRAM usage after Extract.
+
 ## [v0.5.0] - 2026-02-16
 
 ### Added
