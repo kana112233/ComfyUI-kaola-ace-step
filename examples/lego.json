@@ -19,9 +19,9 @@
         },
         {
             "id": 2,
-            "type": "ACE_STEP_Lego",
+            "type": "ACE_STEP_LEGO",
             "pos": [480, 100],
-            "size": [400, 450],
+            "size": [400, 500],
             "flags": {},
             "order": 1,
             "mode": 0,
@@ -31,7 +31,7 @@
                 {"name": "audio_path", "type": "STRING", "links": []},
                 {"name": "metadata", "type": "STRING", "links": []}
             ],
-            "properties": {"Node name for S&R": "ACE_STEP_Lego"},
+            "properties": {"Node name for S&R": "ACE_STEP_LEGO"},
             "widgets_values": [
                 "drums",
                 "Add energetic drum beat",
@@ -44,6 +44,9 @@
                 0.0,
                 -1.0,
                 7.0,
+                false,
+                0.0,
+                1.0,
                 "flac"
             ]
         },

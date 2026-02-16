@@ -19,9 +19,9 @@
         },
         {
             "id": 2,
-            "type": "ACE_STEP_Extract",
+            "type": "ACE_STEP_EXTRACT",
             "pos": [480, 100],
-            "size": [400, 400],
+            "size": [400, 450],
             "flags": {},
             "order": 1,
             "mode": 0,
@@ -31,7 +31,7 @@
                 {"name": "audio_path", "type": "STRING", "links": []},
                 {"name": "metadata", "type": "STRING", "links": []}
             ],
-            "properties": {"Node name for S&R": "ACE_STEP_Extract"},
+            "properties": {"Node name for S&R": "ACE_STEP_EXTRACT"},
             "widgets_values": [
                 "vocals",
                 "acestep-v15-base",
@@ -41,6 +41,9 @@
                 50,
                 "auto",
                 7.0,
+                false,
+                0.0,
+                1.0,
                 "flac"
             ]
         },
