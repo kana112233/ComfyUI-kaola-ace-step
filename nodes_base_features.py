@@ -133,7 +133,7 @@ def auto_detect_device() -> str:
         return "cpu"
 
 
-def initialize_handlers(checkpoint_dir: str, config_path: str, lm_model_path: str, device: str = "auto"):
+def initialize_handlers(checkpoint_dir: str, lm_model_path: str, device: str = "auto"):
     """Initialize ACE-Step handlers using ACEStepWrapper."""
     global _dit_handler, _llm_handler, _handlers_initialized
 
@@ -145,17 +145,11 @@ def initialize_handlers(checkpoint_dir: str, config_path: str, lm_model_path: st
         device = auto_detect_device()
 
     # Get the root model directory (Ace-Step1.5)
-    # checkpoint_dir from UI is like "acestep-v15-base", but we need the parent directory
     model_root = os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)
 
-    # config_path is the actual model subdirectory (e.g., "acestep-v15-base")
-    # If checkpoint_dir and config_path are the same, use model_root as checkpoint_dir
-    if checkpoint_dir == config_path or not config_path:
-        actual_checkpoint_dir = model_root
-        actual_config_path = checkpoint_dir
-    else:
-        actual_checkpoint_dir = os.path.join(model_root, checkpoint_dir) if not os.path.isabs(checkpoint_dir) else checkpoint_dir
-        actual_config_path = config_path
+    # checkpoint_dir is the model subdirectory (e.g., "acestep-v15-base")
+    actual_checkpoint_dir = model_root
+    actual_config_path = checkpoint_dir
 
     # Check if model directory exists
     if not os.path.exists(actual_checkpoint_dir):
@@ -165,7 +159,7 @@ def initialize_handlers(checkpoint_dir: str, config_path: str, lm_model_path: st
             f"See https://github.com/ACE-Step/Ace-Step1.5"
         )
 
-    # Use ACEStepWrapper to initialize DiT components (avoids hardcoded checkpoints subdirectory)
+    # Use ACEStepWrapper to initialize DiT components
     _dit_handler = AceStepHandler()
     wrapper = ACEStepWrapper()
     wrapper.initialize(
@@ -184,7 +178,7 @@ def initialize_handlers(checkpoint_dir: str, config_path: str, lm_model_path: st
     _dit_handler.config = _dit_handler.model.config
     _dit_handler.quantization = None
 
-    # Initialize LLM handler
+    # Initialize LLM handler (required for initialization, but thinking=False will skip LM generation)
     lm_model_path_resolved = os.path.join(actual_checkpoint_dir, lm_model_path)
     if not os.path.exists(lm_model_path_resolved):
         lm_model_path_resolved = lm_model_path
@@ -215,19 +209,18 @@ class ACE_STEP_EXTRACT:
             "required": {
                 "src_audio": ("AUDIO", {"tooltip": "Source audio to extract track from."}),
                 "track_name": (TRACK_NAMES, {"default": "vocals", "tooltip": "Track to extract."}),
-                "checkpoint_dir": (get_acestep_base_checkpoints(), {"default": "acestep-v15-base", "tooltip": "Must use base model, not turbo."}),
-                "config_path": (["acestep-v15-base"], {"default": "acestep-v15-base", "tooltip": "Model config name."}),
-                "lm_model_path": (get_acestep_lm_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for reasoning."}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "tooltip": "Random seed. -1 for random."}),
-                "inference_steps": ("INT", {"default": 50, "min": 20, "max": 100, "tooltip": "Diffusion steps. Higher = better quality."}),
-                "device": (["auto", "cuda", "cpu", "mps"], {"default": "auto", "tooltip": "Compute device."}),
             },
             "optional": {
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "tooltip": "Random seed. -1 for random."}),
+                "inference_steps": ("INT", {"default": 50, "min": 20, "max": 100, "tooltip": "Diffusion steps. Higher = better quality."}),
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "CFG scale. Higher = more prompt adherence."}),
-                "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance. May improve quality for base model."}),
-                "cfg_interval_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "CFG start ratio (0.0-1.0)."}),
-                "cfg_interval_end": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "tooltip": "CFG end ratio (0.0-1.0)."}),
+                "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance. May improve quality."}),
+                "cfg_interval_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "CFG start ratio."}),
+                "cfg_interval_end": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "tooltip": "CFG end ratio."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio format."}),
+                "checkpoint_dir": (get_acestep_base_checkpoints(), {"default": "acestep-v15-base", "tooltip": "Model directory."}),
+                "lm_model_path": (get_acestep_lm_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model."}),
+                "device": (["auto", "cuda", "cpu", "mps"], {"default": "auto", "tooltip": "Compute device."}),
             },
         }
 
@@ -236,7 +229,7 @@ class ACE_STEP_EXTRACT:
     FUNCTION = "extract"
     CATEGORY = "Audio/ACE-Step"
 
-    def extract(self, src_audio, track_name, checkpoint_dir, config_path, lm_model_path, seed, inference_steps, device, guidance_scale=7.0, use_adg=False, cfg_interval_start=0.0, cfg_interval_end=1.0, audio_format="flac"):
+    def extract(self, src_audio, track_name, seed=-1, inference_steps=50, guidance_scale=7.0, use_adg=False, cfg_interval_start=0.0, cfg_interval_end=1.0, audio_format="flac", checkpoint_dir="acestep-v15-base", lm_model_path="acestep-5Hz-lm-1.7B", device="auto"):
         from acestep.inference import generate_music, GenerationParams, GenerationConfig
 
         print(f"[ACE_STEP_EXTRACT] Starting extraction...")
@@ -247,7 +240,7 @@ class ACE_STEP_EXTRACT:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        dit_handler, llm_handler = initialize_handlers(checkpoint_dir, config_path, lm_model_path, device)
+        dit_handler, llm_handler = initialize_handlers(checkpoint_dir, lm_model_path, device)
 
         # Save input audio
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -286,14 +279,7 @@ class ACE_STEP_EXTRACT:
                 raise RuntimeError(f"Extract failed: {result.error}")
 
             audio_data = result.audios[0]
-
-            # Debug: print audio info
             tensor = audio_data["tensor"]
-            print(f"[ACE_STEP_EXTRACT] Audio tensor shape: {tensor.shape}")
-            print(f"[ACE_STEP_EXTRACT] Audio tensor dtype: {tensor.dtype}")
-            print(f"[ACE_STEP_EXTRACT] Audio tensor min/max: {tensor.min().item():.4f} / {tensor.max().item():.4f}")
-            print(f"[ACE_STEP_EXTRACT] Sample rate: {audio_data['sample_rate']}")
-            print(f"[ACE_STEP_EXTRACT] Output path: {audio_data['path']}")
 
             audio_output = {
                 "waveform": tensor.cpu().unsqueeze(0),
@@ -325,22 +311,21 @@ class ACE_STEP_LEGO:
             "required": {
                 "src_audio": ("AUDIO", {"tooltip": "Source audio as context."}),
                 "track_name": (TRACK_NAMES, {"default": "drums", "tooltip": "Track to generate."}),
-                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Style description (optional)."}),
-                "checkpoint_dir": (get_acestep_base_checkpoints(), {"default": "acestep-v15-base", "tooltip": "Must use base model, not turbo."}),
-                "config_path": (["acestep-v15-base"], {"default": "acestep-v15-base", "tooltip": "Model config name."}),
-                "lm_model_path": (get_acestep_lm_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for reasoning."}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "tooltip": "Random seed. -1 for random."}),
-                "inference_steps": ("INT", {"default": 50, "min": 20, "max": 100, "tooltip": "Diffusion steps. Higher = better quality."}),
-                "device": (["auto", "cuda", "cpu", "mps"], {"default": "auto", "tooltip": "Compute device."}),
             },
             "optional": {
-                "repainting_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 600.0, "tooltip": "Start time for repainting region (seconds)."}),
-                "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0, "tooltip": "End time for repainting region. -1 for until end."}),
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Style description (optional)."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "tooltip": "Random seed. -1 for random."}),
+                "inference_steps": ("INT", {"default": 50, "min": 20, "max": 100, "tooltip": "Diffusion steps. Higher = better quality."}),
                 "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "CFG scale. Higher = more prompt adherence."}),
-                "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance. May improve quality for base model."}),
-                "cfg_interval_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "CFG start ratio (0.0-1.0)."}),
-                "cfg_interval_end": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "tooltip": "CFG end ratio (0.0-1.0)."}),
+                "repainting_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 600.0, "tooltip": "Start time for region (seconds)."}),
+                "repainting_end": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 600.0, "tooltip": "End time for region. -1 for until end."}),
+                "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance. May improve quality."}),
+                "cfg_interval_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "CFG start ratio."}),
+                "cfg_interval_end": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "tooltip": "CFG end ratio."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio format."}),
+                "checkpoint_dir": (get_acestep_base_checkpoints(), {"default": "acestep-v15-base", "tooltip": "Model directory."}),
+                "lm_model_path": (get_acestep_lm_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model."}),
+                "device": (["auto", "cuda", "cpu", "mps"], {"default": "auto", "tooltip": "Compute device."}),
             },
         }
 
@@ -349,7 +334,7 @@ class ACE_STEP_LEGO:
     FUNCTION = "lego"
     CATEGORY = "Audio/ACE-Step"
 
-    def lego(self, src_audio, track_name, caption, checkpoint_dir, config_path, lm_model_path, seed, inference_steps, device, repainting_start=0.0, repainting_end=-1.0, guidance_scale=7.0, use_adg=False, cfg_interval_start=0.0, cfg_interval_end=1.0, audio_format="flac"):
+    def lego(self, src_audio, track_name, caption="", seed=-1, inference_steps=50, guidance_scale=7.0, repainting_start=0.0, repainting_end=-1.0, use_adg=False, cfg_interval_start=0.0, cfg_interval_end=1.0, audio_format="flac", checkpoint_dir="acestep-v15-base", lm_model_path="acestep-5Hz-lm-1.7B", device="auto"):
         from acestep.inference import generate_music, GenerationParams, GenerationConfig
 
         print(f"[ACE_STEP_LEGO] Starting generation...")
@@ -361,7 +346,7 @@ class ACE_STEP_LEGO:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        dit_handler, llm_handler = initialize_handlers(checkpoint_dir, config_path, lm_model_path, device)
+        dit_handler, llm_handler = initialize_handlers(checkpoint_dir, lm_model_path, device)
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             temp_path = tmp.name
@@ -432,12 +417,6 @@ class ACE_STEP_COMPLETE:
         return {
             "required": {
                 "src_audio": ("AUDIO", {"tooltip": "Source audio to complete."}),
-                "checkpoint_dir": (get_acestep_base_checkpoints(), {"default": "acestep-v15-base", "tooltip": "Model checkpoint directory."}),
-                "config_path": (["acestep-v15-base"], {"default": "acestep-v15-base", "tooltip": "Model config name."}),
-                "lm_model_path": (get_acestep_lm_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model for reasoning."}),
-                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "tooltip": "Random seed. -1 for random."}),
-                "inference_steps": ("INT", {"default": 50, "min": 20, "max": 100, "tooltip": "Diffusion steps. Higher = better quality."}),
-                "device": (["auto", "cuda", "cpu", "mps"], {"default": "auto", "tooltip": "Compute device."}),
             },
             "optional": {
                 # Track selection as boolean switches
@@ -453,16 +432,22 @@ class ACE_STEP_COMPLETE:
                 "add_backing_vocals": ("BOOLEAN", {"default": False, "tooltip": "Add backing vocals track"}),
                 "add_fx": ("BOOLEAN", {"default": False, "tooltip": "Add FX/sound effects track"}),
                 "add_vocals": ("BOOLEAN", {"default": False, "tooltip": "Add vocals track"}),
-                # Vocal settings (important when add_vocals is True)
-                "vocal_language": (VOCAL_LANGUAGES, {"default": "unknown", "tooltip": "Language for vocals. Set when add_vocals=True."}),
-                "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Lyrics text. Set when add_vocals=True."}),
-                # Other optional parameters
-                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Style description (optional)."}),
-                "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "CFG scale. Higher = more prompt adherence."}),
-                "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance. May improve quality for base model."}),
-                "cfg_interval_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "CFG start ratio (0.0-1.0)."}),
-                "cfg_interval_end": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "tooltip": "CFG end ratio (0.0-1.0)."}),
+                # Vocal settings
+                "vocal_language": (VOCAL_LANGUAGES, {"default": "unknown", "tooltip": "Language for vocals."}),
+                "lyrics": ("STRING", {"default": "", "multiline": True, "tooltip": "Lyrics text."}),
+                # Style and quality
+                "caption": ("STRING", {"default": "", "multiline": True, "tooltip": "Style description."}),
+                "seed": ("INT", {"default": -1, "min": -1, "max": 0xFFFFFFFFffffffff, "tooltip": "Random seed. -1 for random."}),
+                "inference_steps": ("INT", {"default": 50, "min": 20, "max": 100, "tooltip": "Diffusion steps. Higher = better quality."}),
+                "guidance_scale": ("FLOAT", {"default": 7.0, "min": 1.0, "max": 15.0, "tooltip": "CFG scale."}),
+                "use_adg": ("BOOLEAN", {"default": False, "tooltip": "Adaptive Dual Guidance."}),
+                "cfg_interval_start": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "CFG start ratio."}),
+                "cfg_interval_end": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "tooltip": "CFG end ratio."}),
                 "audio_format": (["flac", "mp3", "wav"], {"default": "flac", "tooltip": "Output audio format."}),
+                # Advanced (usually don't need to change)
+                "checkpoint_dir": (get_acestep_base_checkpoints(), {"default": "acestep-v15-base", "tooltip": "Model directory."}),
+                "lm_model_path": (get_acestep_lm_models(), {"default": "acestep-5Hz-lm-1.7B", "tooltip": "Language model."}),
+                "device": (["auto", "cuda", "cpu", "mps"], {"default": "auto", "tooltip": "Compute device."}),
             },
         }
 
@@ -474,12 +459,6 @@ class ACE_STEP_COMPLETE:
     def complete(
         self,
         src_audio,
-        checkpoint_dir,
-        config_path,
-        lm_model_path,
-        seed,
-        inference_steps,
-        device,
         add_drums=True,
         add_bass=True,
         add_guitar=False,
@@ -495,11 +474,16 @@ class ACE_STEP_COMPLETE:
         vocal_language="unknown",
         lyrics="",
         caption="",
+        seed=-1,
+        inference_steps=50,
         guidance_scale=7.0,
         use_adg=False,
         cfg_interval_start=0.0,
         cfg_interval_end=1.0,
         audio_format="flac",
+        checkpoint_dir="acestep-v15-base",
+        lm_model_path="acestep-5Hz-lm-1.7B",
+        device="auto",
     ):
         from acestep.inference import generate_music, GenerationParams, GenerationConfig
 
@@ -545,7 +529,7 @@ class ACE_STEP_COMPLETE:
         print(f"  - Inference steps: {inference_steps}")
         print(f"  - Device: {device}")
 
-        dit_handler, llm_handler = initialize_handlers(checkpoint_dir, config_path, lm_model_path, device)
+        dit_handler, llm_handler = initialize_handlers(checkpoint_dir, lm_model_path, device)
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             temp_path = tmp.name

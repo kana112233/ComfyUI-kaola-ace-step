@@ -21,7 +21,7 @@
             "id": 2,
             "type": "ACE_STEP_COMPLETE",
             "pos": [480, 100],
-            "size": [400, 700],
+            "size": [400, 650],
             "flags": {},
             "order": 1,
             "mode": 0,
@@ -33,12 +33,6 @@
             ],
             "properties": {"Node name for S&R": "ACE_STEP_COMPLETE"},
             "widgets_values": [
-                "acestep-v15-base",
-                "acestep-v15-base",
-                "acestep-5Hz-lm-1.7B",
-                -1,
-                50,
-                "auto",
                 true,
                 true,
                 false,
@@ -54,11 +48,16 @@
                 "unknown",
                 "",
                 "Pop ballad style arrangement",
+                -1,
+                50,
                 7.0,
                 false,
                 0.0,
                 1.0,
-                "flac"
+                "flac",
+                "acestep-v15-base",
+                "acestep-5Hz-lm-1.7B",
+                "auto"
             ]
         },
         {
