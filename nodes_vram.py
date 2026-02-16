@@ -107,38 +107,49 @@ class ACE_STEP_CLEAR_VRAM:
 
     def clear_vram(self, any_input=None):
         """Clear all GPU memory."""
+        print("[ACE_STEP_ClearVRAM] Starting VRAM cleanup...")
+
         mem_before = _get_memory_info()
+        if mem_before:
+            print(f"[ACE_STEP_ClearVRAM] Before: Allocated={mem_before['used']:.2f}GB, Reserved={mem_before['reserved']:.2f}GB")
 
         # Clear ACE-Step handlers
+        print("[ACE_STEP_ClearVRAM] Clearing ACE-Step handlers...")
         cleared = _clear_acestep_handlers()
 
         # Clear CUDA memory with multiple rounds
         if hasattr(torch, 'cuda') and torch.cuda.is_available():
+            print("[ACE_STEP_ClearVRAM] Clearing CUDA cache (3 rounds)...")
             torch.cuda.synchronize()
-            for _ in range(3):
+            for i in range(3):
                 gc.collect()
                 torch.cuda.empty_cache()
+                print(f"[ACE_STEP_ClearVRAM]   Round {i+1}/3 done")
             try:
                 torch.cuda.reset_peak_memory_stats()
+                print("[ACE_STEP_ClearVRAM] Reset peak memory stats")
             except Exception:
                 pass
 
         # Also use ComfyUI's memory management
         try:
             import comfy.model_management as mm
+            print("[ACE_STEP_ClearVRAM] Using ComfyUI memory management...")
             mm.free_memory(1.0, mm.get_torch_device())
             mm.soft_empty_cache()
+            print("[ACE_STEP_ClearVRAM] ComfyUI cache cleared")
         except ImportError:
-            pass
+            print("[ACE_STEP_ClearVRAM] ComfyUI model_management not available")
 
         mem_after = _get_memory_info()
 
         if cleared:
-            print(f"[ACE_STEP_ClearVRAM] Cleared: {', '.join(cleared)}")
+            print(f"[ACE_STEP_ClearVRAM] Models cleared: {', '.join(cleared)}")
 
         if mem_before and mem_after:
             freed = mem_before['used'] - mem_after['used']
-            print(f"[ACE_STEP_ClearVRAM] VRAM: {mem_before['used']:.2f}GB -> {mem_after['used']:.2f}GB (freed: {freed:.2f}GB)")
+            print(f"[ACE_STEP_ClearVRAM] After: Allocated={mem_after['used']:.2f}GB, Reserved={mem_after['reserved']:.2f}GB")
+            print(f"[ACE_STEP_ClearVRAM] Total freed: {freed:.2f}GB")
         else:
             print("[ACE_STEP_ClearVRAM] GPU memory cleared")
 
