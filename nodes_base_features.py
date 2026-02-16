@@ -267,6 +267,7 @@ class ACE_STEP_EXTRACT:
                 inference_steps=inference_steps,
                 seed=seed,
                 guidance_scale=guidance_scale,
+                shift=3.0,  # Required for base model (not turbo)
             )
 
             config = GenerationConfig(batch_size=1, use_random_seed=(seed == -1), audio_format=audio_format)
@@ -365,6 +366,7 @@ class ACE_STEP_LEGO:
                 inference_steps=inference_steps,
                 seed=seed,
                 guidance_scale=guidance_scale,
+                shift=3.0,  # Required for base model (not turbo)
             )
 
             config = GenerationConfig(batch_size=1, use_random_seed=(seed == -1), audio_format=audio_format)
@@ -536,6 +538,7 @@ class ACE_STEP_COMPLETE:
                 inference_steps=inference_steps,
                 seed=seed,
                 guidance_scale=guidance_scale,
+                shift=3.0,  # Required for base model (not turbo)
                 vocal_language=vocal_language,
                 lyrics=lyrics if lyrics else "",
             )
