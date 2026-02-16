@@ -377,6 +377,7 @@ class ACE_STEP_LEGO:
                 seed=seed,
                 guidance_scale=guidance_scale,
                 shift=3.0,  # Required for base model (not turbo)
+                thinking=False,  # IMPORTANT: Disable LM to use src_audio directly
             )
 
             config = GenerationConfig(batch_size=1, use_random_seed=(seed == -1), audio_format=audio_format)
@@ -549,6 +550,7 @@ class ACE_STEP_COMPLETE:
                 seed=seed,
                 guidance_scale=guidance_scale,
                 shift=3.0,  # Required for base model (not turbo)
+                thinking=False,  # IMPORTANT: Disable LM to use src_audio directly
                 vocal_language=vocal_language,
                 lyrics=lyrics if lyrics else "",
             )
