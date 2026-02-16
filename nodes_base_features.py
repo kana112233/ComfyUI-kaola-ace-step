@@ -268,6 +268,7 @@ class ACE_STEP_EXTRACT:
                 seed=seed,
                 guidance_scale=guidance_scale,
                 shift=3.0,  # Required for base model (not turbo)
+                thinking=False,  # IMPORTANT: Disable LM to use src_audio directly
             )
 
             config = GenerationConfig(batch_size=1, use_random_seed=(seed == -1), audio_format=audio_format)
