@@ -6,6 +6,31 @@ These features are **ONLY available with the Base model** (NOT supported with Tu
 - **Lego**: Add or modify specific instrument tracks based on audio context
 - **Complete**: Complete missing tracks from partial audio input
 
+## Installation
+
+### 1. Update acestep_repo Submodule
+
+The base features require the latest acestep_repo code. Update the submodule:
+
+```bash
+cd ComfyUI/custom_nodes/comfyui-ace-step
+git submodule update --init --recursive
+```
+
+Or if you want to update to the latest version:
+
+```bash
+cd ComfyUI/custom_nodes/comfyui-ace-step
+git submodule update --init --recursive --remote
+```
+
+### 2. Install Dependencies
+
+```bash
+cd acestep_repo
+pip install -e .
+```
+
 ## Model Requirements
 
 | Model | Directory | Required |
