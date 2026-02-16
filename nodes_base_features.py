@@ -279,8 +279,17 @@ class ACE_STEP_EXTRACT:
                 raise RuntimeError(f"Extract failed: {result.error}")
 
             audio_data = result.audios[0]
+
+            # Debug: print audio info
+            tensor = audio_data["tensor"]
+            print(f"[ACE_STEP_EXTRACT] Audio tensor shape: {tensor.shape}")
+            print(f"[ACE_STEP_EXTRACT] Audio tensor dtype: {tensor.dtype}")
+            print(f"[ACE_STEP_EXTRACT] Audio tensor min/max: {tensor.min().item():.4f} / {tensor.max().item():.4f}")
+            print(f"[ACE_STEP_EXTRACT] Sample rate: {audio_data['sample_rate']}")
+            print(f"[ACE_STEP_EXTRACT] Output path: {audio_data['path']}")
+
             audio_output = {
-                "waveform": audio_data["tensor"].cpu().unsqueeze(0),
+                "waveform": tensor.cpu().unsqueeze(0),
                 "sample_rate": audio_data["sample_rate"],
             }
 
