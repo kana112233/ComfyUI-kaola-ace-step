@@ -1572,7 +1572,7 @@ from nodes_base_features import ACE_STEP_EXTRACT, ACE_STEP_LEGO, ACE_STEP_COMPLE
 # --------------------------------------------------------------------------------
 # ACE-Step VRAM Management Nodes
 # --------------------------------------------------------------------------------
-from nodes_vram import ACE_STEP_CLEAR_VRAM, ACE_STEP_FREE_MODEL
+from nodes_vram import ACE_STEP_CLEAR_VRAM
 
 
 # Node mappings for ComfyUI
@@ -1591,7 +1591,6 @@ NODE_CLASS_MAPPINGS = {
     "ACE_STEP_Lego": ACE_STEP_LEGO,
     "ACE_STEP_Complete": ACE_STEP_COMPLETE,
     "ACE_STEP_ClearVRAM": ACE_STEP_CLEAR_VRAM,
-    "ACE_STEP_FreeModel": ACE_STEP_FREE_MODEL,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1609,5 +1608,4 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_STEP_Lego": "ACE-Step Lego (Base Only)",
     "ACE_STEP_Complete": "ACE-Step Complete (Base Only)",
     "ACE_STEP_ClearVRAM": "ACE-Step Clear VRAM",
-    "ACE_STEP_FreeModel": "ACE-Step Free Model",
 }
