@@ -139,12 +139,24 @@ class ACEStepWrapper:
         # Load the model
         try:
             print(f"  Using attention: {attn_implementation}")
-            self.model = AutoModel.from_pretrained(
-                model_path,
-                trust_remote_code=True,
-                attn_implementation=attn_implementation,
-                dtype="bfloat16"
-            )
+            
+            # Temporary add model_path to sys.path to help transformers resolve sibling imports 
+            import sys
+            model_abs_path = os.path.abspath(model_path)
+            orig_sys_path = sys.path[:]
+            if model_abs_path not in sys.path:
+                sys.path.insert(0, model_abs_path)
+
+            try:
+                self.model = AutoModel.from_pretrained(
+                    model_path,
+                    trust_remote_code=True,
+                    attn_implementation=attn_implementation,
+                    dtype="bfloat16",
+                    low_cpu_mem_usage=False
+                )
+            finally:
+                sys.path = orig_sys_path
         except Exception as e:
             print(f"  Failed with {attn_implementation}: {e}")
             if attn_implementation == "sdpa":
@@ -220,7 +232,16 @@ class ACEStepWrapper:
         from diffusers.models import AutoencoderOobleck
 
         print(f"\n[3/4] Loading VAE...")
-        self.vae = AutoencoderOobleck.from_pretrained(path)
+        import sys
+        vae_abs_path = os.path.abspath(path)
+        orig_sys_path = sys.path[:]
+        if vae_abs_path not in sys.path:
+            sys.path.insert(0, vae_abs_path)
+            
+        try:
+            self.vae = AutoencoderOobleck.from_pretrained(path, low_cpu_mem_usage=False)
+        finally:
+            sys.path = orig_sys_path
         vae_dtype = torch.bfloat16 if device in ["cuda", "xpu", "mps"] else torch.float32
 
         if not self.offload_to_cpu:
@@ -237,7 +258,17 @@ class ACEStepWrapper:
 
         print(f"\n[4/4] Loading text encoder...")
         self.text_tokenizer = AutoTokenizer.from_pretrained(path)
-        self.text_encoder = AutoModel.from_pretrained(path)
+        
+        import sys
+        te_abs_path = os.path.abspath(path)
+        orig_sys_path = sys.path[:]
+        if te_abs_path not in sys.path:
+            sys.path.insert(0, te_abs_path)
+            
+        try:
+            self.text_encoder = AutoModel.from_pretrained(path, low_cpu_mem_usage=False)
+        finally:
+            sys.path = orig_sys_path
 
         if not self.offload_to_cpu:
             self.text_encoder = self.text_encoder.to(device).to(self.dtype)

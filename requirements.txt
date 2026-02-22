@@ -6,7 +6,7 @@ torchvision>=0.15.0
 torchaudio>=2.0.0
 soundfile>=0.12.0
 numpy>=1.24.0
-transformers>=4.48.0
+transformers>=4.51.0,<4.58.0
 
 # ACE-Step from GitHub (requires cloning due to local dependencies)
 # Install with: pip install git+https://github.com/ace-step/ACE-Step-1.5.git
