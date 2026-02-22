@@ -119,6 +119,19 @@ class ACEStepWrapper:
         from transformers import AutoModel
 
         print(f"\n[1/4] Loading DiT model from: {model_path}")
+        
+        # Emergency patch for transformers v5 / compatibility issues
+        try:
+            import transformers.configuration_utils
+            if not hasattr(transformers.configuration_utils, "layer_type_validation"):
+                print(f"  [ACE_STEP] Patching layer_type_validation in transformers.configuration_utils")
+                def layer_type_validation(*args, **kwargs):
+                    return args[0] if args else None
+                transformers.configuration_utils.layer_type_validation = layer_type_validation
+            else:
+                print(f"  [ACE_STEP] layer_type_validation already exists in transformers.configuration_utils")
+        except Exception as e:
+            print(f"  [ACE_STEP] Warning: Failed to apply transformers patch: {e}")
 
         # Try to determine best attention implementation
         attn_implementation = self._get_attention_implementation()

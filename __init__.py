@@ -29,6 +29,24 @@ def _force_load_libgomp():
 
 _force_load_libgomp()
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+# --------------------------------------------------------------------------------
+# Transformers 5.x Compatibility Patch
+# Transformers v5 removed 'layer_type_validation' from configuration_utils, 
+# which is still required by the remote ACE-Step model code.
+# --------------------------------------------------------------------------------
+def _patch_transformers_v5():
+    try:
+        import transformers.configuration_utils
+        if not hasattr(transformers.configuration_utils, "layer_type_validation"):
+            # print("[ACE_STEP] Patching transformers.configuration_utils.layer_type_validation for v5 compatibility")
+            def layer_type_validation(*args, **kwargs):
+                return args[0] if args else None
+            transformers.configuration_utils.layer_type_validation = layer_type_validation
+    except (ImportError, Exception):
+        pass
+
+_patch_transformers_v5()
 # --------------------------------------------------------------------------------
 
 import torch
