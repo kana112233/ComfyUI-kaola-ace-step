@@ -309,24 +309,40 @@ def get_acestep_models():
     return ["acestep-v15-turbo", "acestep-v15-base", "acestep-5Hz-lm-1.7B", "acestep-5Hz-lm-0.6B", "acestep-5Hz-lm-4B"]
 
 def get_acestep_checkpoints():
-    """Scan ALL subdirectories in ComfyUI/models/ and let user choose any as the base folder."""
+    """Scan root models dir and registered paths for all available folders."""
     if not ACESTEP_AVAILABLE:
         return [""]
     
     result = []
-    # Scan all directories directly under ComfyUI/models/
+    
+    # 1. Scan all immediate subdirectories in ComfyUI/models/
     if os.path.exists(folder_paths.models_dir):
         try:
             for item in os.listdir(folder_paths.models_dir):
                 item_path = os.path.join(folder_paths.models_dir, item)
-                if os.path.isdir(item_path):
+                if os.path.isdir(item_path) and not item.startswith('.'):
                     result.append(item)
-        except Exception as e:
-            print(f"[ACE_STEP] Error scanning models directory: {e}")
+        except Exception: pass
+
+    # 2. Scan subfolders of all registered ACE-Step paths (supports deep versioning)
+    registered_paths = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)
+    for bp in registered_paths:
+        if os.path.exists(bp) and os.path.isdir(bp):
+            try:
+                # Include the registered folder basename as well
+                name = os.path.basename(bp.rstrip('/\\'))
+                if name: result.append(name)
+                
+                # Include its children
+                for item in os.listdir(bp):
+                    item_path = os.path.join(bp, item)
+                    if os.path.isdir(item_path) and not item.startswith('.'):
+                        result.append(item)
+            except Exception: pass
     
     unique_results = sorted(list(set(result)))
     
-    # Ensure legacy/default name is at the front if it exists
+    # Priority: ensure Ace-Step1.5 is at the very top for default behavior
     if ACESTEP_LEGACY_NAME in unique_results:
         unique_results.remove(ACESTEP_LEGACY_NAME)
         unique_results.insert(0, ACESTEP_LEGACY_NAME)
@@ -344,20 +360,26 @@ def resolve_checkpoint_path(name: str) -> str:
     if name in _checkpoint_path_cache:
         return _checkpoint_path_cache[name]
     
-    # Try to find the full path
+    # 1. Search in registered category paths (including subdirectories)
     paths = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)
-    for p in paths:
-        if os.path.basename(p.rstrip('/\\')) == name or name in p:
-            _checkpoint_path_cache[name] = p
-            return p
+    for bp in paths:
+        # Check if basename matches
+        if os.path.basename(bp.rstrip('/\\')) == name:
+            _checkpoint_path_cache[name] = bp
+            return bp
+        # Check if it's a subdirectory of this base path
+        sub_p = os.path.join(bp, name)
+        if os.path.exists(sub_p) and os.path.isdir(sub_p):
+            _checkpoint_path_cache[name] = sub_p
+            return sub_p
     
-    # Fallback: assume it's relative to models_dir
+    # 2. Fallback: assume it's relative to models_dir
     full_path = os.path.join(folder_paths.models_dir, name)
     if os.path.exists(full_path):
         _checkpoint_path_cache[name] = full_path
         return full_path
     
-    # Last fallback: return the name as-is (might be absolute path already)
+    # 3. Last fallback: return the name as-is (might be absolute path already)
     return name
 
 def get_available_peft_loras():
