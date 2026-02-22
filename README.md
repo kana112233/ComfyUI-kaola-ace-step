@@ -66,24 +66,29 @@ hfd ACE-Step/Ace-Step1.5 --local-dir ComfyUI/models/Ace-Step1.5
 
 ## Node Settings
 
-| Parameter | Value |
-|----------|-------|
-| `checkpoint_dir` | Leave empty (uses `ComfyUI/models/Ace-Step1.5/`) |
-| `config_path` | `acestep-v15-turbo` (fast) or `acestep-v15-base` (quality) |
-| `lm_model_path` | `acestep-5Hz-lm-1.7B` (recommended) |
-| `device` | `auto` (auto-detects MPS/CUDA/CPU) |
+| Parameter | Value | Description |
+|----------|-------|-------------|
+| `checkpoint_dir` | Leave empty | Uses `ComfyUI/models/Ace-Step1.5/` by default |
+| `config_path` | `acestep-v15-turbo` | Recommended for speed |
+| `lm_model_path` | `acestep-5Hz-lm-1.7B` | Recommended language model |
+| `device` | `auto` | Auto-detects device |
 
 ## Model Directory Structure
 
-Ensure your models are organized like this:
+The `checkpoint_dir` dropdown **scans all folders** directly under `ComfyUI/models/`. You can choose any folder from the root models directory as your ACE-Step base folder.
+
+Example layout:
 
 ```
-ComfyUI/models/Ace-Step1.5/
-├── acestep-v15-turbo/      # DiT model (turbo version)
-├── acestep-v15-base/       # DiT model (base version, optional)
-├── acestep-5Hz-lm-1.7B/    # LM model
-├── vae/                    # VAE model
-└── Qwen3-Embedding-0.6B/   # Embedding model
+ComfyUI/models/
+├── Ace-Step1.5/            # Select "Ace-Step1.5" in the node
+│   ├── acestep-v15-turbo/
+│   ├── vae/
+│   └── ...
+└── My-Custom-Folder/       # Select "My-Custom-Folder" in the node
+    ├── acestep-v15-turbo/
+    ├── vae/
+    └── ...
 ```
 
 ## Workflow Examples

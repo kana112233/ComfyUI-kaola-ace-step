@@ -1,23 +1,22 @@
-# ACE-Step 模型设置指南
+# ACE-Step Model Setup Guide
 
-## 模型目录结构
+## Model Directory Structure
 
-将 ACE-Step 模型放在 ComfyUI 的 models 目录下：
+The `checkpoint_dir` parameter in the nodes **scans all subdirectories** directly under the root `ComfyUI/models/` folder.
+
+This allows you to choose any folder in the models directory as your ACE-Step base.
+
+### Example Layout
 
 ```
-ComfyUI/models/Ace-Step1.5/
-├── acestep-v15-turbo/          # DiT 模型
-│   ├── config.json
-│   ├── model.safetensors
-│   └── ...
-├── acestep-5Hz-lm-1.7B/        # LM 模型
-│   ├── config.json
-│   ├── model.safetensors
-│   └── ...
-├── vae/                         # VAE 模型
-│   └── ...
-└── Qwen3-Embedding-0.6B/        # 文本编码器
-    └── ...
+ComfyUI/models/
+└── My-ACE-Step-Models/         # This name will appear in the dropdown
+    ├── acestep-v15-turbo/      # DiT Model
+    │   ├── config.json
+    │   └── model.safetensors
+    ├── acestep-5Hz-lm-1.7B/    # LM Model
+    ├── vae/                    # VAE Model
+    └── Qwen3-Embedding-0.6B/   # Text Encoder
 ```
 
 ## 安装步骤

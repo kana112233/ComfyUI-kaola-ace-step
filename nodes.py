@@ -295,46 +295,45 @@ if ACESTEP_AVAILABLE:
     print("Monkeypatched AceStepHandler.convert_src_audio_to_codes to select first codebook")
 
 
-# Register ACE-Step model directory with ComfyUI
-# Models should be placed in: ComfyUI/models/Ace-Step1.5/
-ACESTEP_MODEL_NAME = "Ace-Step1.5"
+# Register ACE-Step model category with ComfyUI
+ACESTEP_MODEL_NAME = "acestep"
+ACESTEP_LEGACY_NAME = "Ace-Step1.5"
+
 if ACESTEP_AVAILABLE:
+    # We still register these as defaults
     folder_paths.add_model_folder_path(ACESTEP_MODEL_NAME, os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME))
+    folder_paths.add_model_folder_path(ACESTEP_MODEL_NAME, os.path.join(folder_paths.models_dir, ACESTEP_LEGACY_NAME))
 
 def get_acestep_models():
-    if not ACESTEP_AVAILABLE:
-        return []
-    model_dir = os.path.join(folder_paths.models_dir, ACESTEP_MODEL_NAME)
-    if not os.path.exists(model_dir):
-        return []
-    # List subdirectories
-    models = [name for name in os.listdir(model_dir) if os.path.isdir(os.path.join(model_dir, name))]
-    # Ensure defaults are present if not found (for UI stability)
-    defaults = ["acestep-5Hz-lm-1.7B", "acestep-v15-turbo"]
-    for d in defaults:
-        if d not in models:
-            models.append(d)
-    return sorted(list(set(models)))
+    """Return common sub-component names used within an ACE-Step model folder."""
+    return ["acestep-v15-turbo", "acestep-v15-base", "acestep-5Hz-lm-1.7B", "acestep-5Hz-lm-0.6B", "acestep-5Hz-lm-4B"]
 
 def get_acestep_checkpoints():
+    """Scan ALL subdirectories in ComfyUI/models/ and let user choose any as the base folder."""
     if not ACESTEP_AVAILABLE:
         return [""]
-    paths = folder_paths.get_folder_paths(ACESTEP_MODEL_NAME)
-    if not paths:
-        # Fallback to default path if not found
-        return [ACESTEP_MODEL_NAME]
     
     result = []
-    for p in paths:
-        if os.path.exists(p):
-            # Use basename for display
-            name = os.path.basename(p.rstrip('/\\'))
-            if not name:  # If path ends with separator
-                name = os.path.basename(os.path.dirname(p))
-            result.append(name if name else ACESTEP_MODEL_NAME)
+    # Scan all directories directly under ComfyUI/models/
+    if os.path.exists(folder_paths.models_dir):
+        try:
+            for item in os.listdir(folder_paths.models_dir):
+                item_path = os.path.join(folder_paths.models_dir, item)
+                if os.path.isdir(item_path):
+                    result.append(item)
+        except Exception as e:
+            print(f"[ACE_STEP] Error scanning models directory: {e}")
     
     unique_results = sorted(list(set(result)))
-    return unique_results if unique_results else [ACESTEP_MODEL_NAME]
+    
+    # Ensure legacy/default name is at the front if it exists
+    if ACESTEP_LEGACY_NAME in unique_results:
+        unique_results.remove(ACESTEP_LEGACY_NAME)
+        unique_results.insert(0, ACESTEP_LEGACY_NAME)
+    elif ACESTEP_LEGACY_NAME not in unique_results:
+        unique_results.insert(0, ACESTEP_LEGACY_NAME)
+        
+    return unique_results
 
 # Cache for checkpoint path resolution
 _checkpoint_path_cache = {}
